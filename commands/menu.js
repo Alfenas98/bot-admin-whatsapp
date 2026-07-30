@@ -1,7 +1,7 @@
-const { getGroupConfig } = require('../lib/database');
+const { getGroupConfig } = require("../lib/database");
 
 function status(v) {
-  return v ? '✅' : '❌';
+  return v ? "✅" : "❌";
 }
 
 const CATEGORIAS = {
@@ -45,15 +45,15 @@ const CATEGORIAS = {
   geral: `*⚙️ Geral*
 #boasvindas on|off|mensagem <texto>
 #saida on|off|mensagem <texto>
-#menu (este painel)`
+#menu (este painel)`,
 };
 
 module.exports = {
-  name: 'menu',
-  aliases: ['status', 'painel'],
+  name: "menu",
+  aliases: ["status", "painel"],
   adminOnly: false,
   async execute({ groupId, args, reply }) {
-    const categoria = (args[0] || '').toLowerCase();
+    const categoria = (args[0] || "").toLowerCase();
     if (CATEGORIAS[categoria]) return reply(CATEGORIAS[categoria]);
 
     const c = getGroupConfig(groupId);
@@ -97,5 +97,5 @@ Apenas admins do grupo podem usar comandos de configuração.
     `.trim();
 
     return reply(texto);
-  }
+  },
 };
