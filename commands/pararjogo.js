@@ -1,12 +1,12 @@
-const { jogoEmAndamento, pararJogo } = require('../lib/gameRuntime');
+const { jogoEmAndamento, pararJogo } = require("../lib/gameRuntime");
 
 module.exports = {
-  name: 'pararjogo',
+  name: "pararjogo",
   adminOnly: true,
   async execute({ sock, groupId, reply }) {
     if (!jogoEmAndamento(groupId)) {
-      return reply('Não tem nenhum jogo em andamento nesse grupo.');
+      return reply("Não tem nenhum jogo em andamento nesse grupo.");
     }
     pararJogo(sock, groupId);
-  }
+  },
 };
