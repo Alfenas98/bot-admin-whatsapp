@@ -41,7 +41,7 @@ const CATEGORIAS = {
 #rankdiario (ranking só de hoje, reseta à meia-noite)
 #autosticker on|off
 #autoresposta on|off|add|remover|lista
-#zoeiranovato on|off (zoa homens na primeira mensagem, por nome)
+#zoeiranovato on|off|frase add|listar|remover|limpar (zoa homens na apresentação, por nome)
 #enquete Pergunta | Opção 1 | Opção 2
 #sorteio <segundos> <prêmio>
 #jogos (lista jogos disponíveis)
