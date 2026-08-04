@@ -42,6 +42,8 @@ const CATEGORIAS = {
 #autosticker on|off
 #autoresposta on|off|add|remover|lista
 #zoeiranovato on|off|frase add|listar|remover|limpar (zoa homens na apresentação, por nome)
+#namorar @user (propõe) | #aceitar | #terminar | #casal [@user]
+#casar @user (pede casamento pra quem já namora)
 #enquete Pergunta | Opção 1 | Opção 2
 #sorteio <segundos> <prêmio>
 #jogos (lista jogos disponíveis)
