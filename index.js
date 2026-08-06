@@ -314,7 +314,7 @@ async function startBot() {
 
     try {
       inc('commandsExecuted');
-      await command({ sock, msg, groupId, senderId, args, reply, getGroupConfig, setGroupConfig, textContent });
+      await command.execute({ sock, msg, groupId, senderId, args, reply, getGroupConfig, setGroupConfig, textContent });
     } catch (err) {
       console.error(`[commands] Erro em ${rawCommand}:`, err.message);
       await reply('⚠️ Ops, algo deu errado ao executar esse comando.');
