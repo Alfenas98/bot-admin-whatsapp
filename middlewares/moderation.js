@@ -1,5 +1,5 @@
 const { getGroupConfig } = require('../lib/database');
-const { isGroupAdmin } = require('../lib/permissions');
+const { isGroupAdminCached, getAdminIdsCached, invalidateGroupCache } = require('../lib/groupCache');
 const { registrarFigurinha } = require('../lib/floodTracker');
 const { registrarMensagem } = require('../lib/spamTracker');
 
@@ -16,7 +16,7 @@ const MEDIA_TYPE_MAP = {
 
 async function runModeration(sock, msg, groupId, senderId, messageType, textContent) {
   const config = getGroupConfig(groupId);
-  const senderIsAdmin = await isGroupAdmin(sock, groupId, senderId);
+  const senderIsAdmin = await isGroupAdminCached(sock, groupId, senderId);
 
   if (config.antifake && !senderIsAdmin) {
     const numero = senderId.split('@')[0];

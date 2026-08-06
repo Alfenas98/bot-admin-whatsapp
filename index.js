@@ -7,86 +7,61 @@ const {
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
-const QRCode = require('qrcode');
 const http = require('http');
-const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
 
 const { loadCommands } = require('./lib/commandLoader');
 const { runModeration } = require('./middlewares/moderation');
-const { getGroupConfig, setGroupConfig, db } = require('./lib/database');
-const { isGroupAdmin } = require('./lib/permissions');
-const { adicionarXP } = require('./lib/xp');
-const { registrarAtividade, registrarEntrada } = require('./lib/activity');
-const { pareceApresentacao, apresentacaoParecemasculina, sortearFrase, jaFoiZoado, marcarComoZoado } = require('./lib/zoeiraNovato');
-const { registrarMensagemDiaria } = require('./lib/dailyRank');
-const { calcularInativos } = require('./lib/inactivityChecker');
+const { getGroupConfig, setGroupConfig } = require('./lib/database');
 const { salvarNome, verificarClone } = require('./lib/anticlone');
 const { storageDir } = require('./lib/storage');
+const { getAdminIdsCached, invalidateGroupCache } = require('./lib/groupCache');
 const { desembrulharMensagem } = require('./lib/unwrapMessage');
 const { consumirFigurinhaPendente } = require('./lib/pendingCapture');
-const { checarAgendamentos } = require('./lib/scheduler');
+const { checarAgendamentos, agoraAjustado } = require('./lib/scheduler');
+const { createResilientSocket } = require('./lib/resilientSocket');
 const messageCache = require('./lib/messageCache');
+const { adicionarXP, registrarAtividade } = require('./lib/xp');
+const { calcularInativos } = require('./lib/inactivityChecker');
+const { getRankDiario } = require('./lib/dailyRank');
+const { inc, get } = require('./lib/metrics');
 
 const commands = loadCommands();
 
-let sockAtual = null;
-let qrAtual = null;
 let statusConexao = 'iniciando';
+let qrAtual = null;
+let primeiraMensagemEnviada = false;
+const adminCache = new Map();
 
-// Servidor web simples só pra mostrar o QR code como imagem — evita ter que
-// ler QR em texto/ASCII direto do log do Railway, que fica ilegível.
 const servidor = http.createServer(async (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
 
-  if (statusConexao === 'conectado') {
-    res.end(`
-      <html><body style="font-family:sans-serif;text-align:center;padding:60px">
-        <h2>✅ Bot conectado com sucesso!</h2>
-        <p>Não precisa mais dessa página.</p>
-      </body></html>
-    `);
-    return;
+  if (req.url === '/health' || req.url === '/api/health') {
+    const connected = statusConexao === 'conectado';
+    res.writeHead(connected ? 200 : 503);
+    return res.end(JSON.stringify({ status: connected ? 'ok' : 'unavailable', connection: statusConexao }));
   }
 
-  if (!qrAtual) {
-    res.end(`
-      <html><head><meta http-equiv="refresh" content="5"></head>
-      <body style="font-family:sans-serif;text-align:center;padding:60px">
-        <h2>⏳ Aguardando QR code...</h2>
-        <p>Essa página atualiza sozinha a cada 5 segundos.</p>
-      </body></html>
-    `);
-    return;
+  if (req.url === '/api/status') {
+    return res.end(JSON.stringify({
+      connection: statusConexao,
+      qr: !!qrAtual,
+      metrics: get()
+    }));
   }
 
-  try {
-    const qrImagemBase64 = await QRCode.toDataURL(qrAtual, { width: 320 });
-    res.end(`
-      <html><head><meta http-equiv="refresh" content="15"></head>
-      <body style="font-family:sans-serif;text-align:center;padding:40px">
-        <h2>📱 Escaneie pra conectar o bot</h2>
-        <img src="${qrImagemBase64}" alt="QR code" />
-        <p>WhatsApp → Aparelhos conectados → Conectar um aparelho</p>
-        <p style="color:#888;font-size:13px">Essa página atualiza sozinha a cada 15s (o QR expira e é renovado automaticamente).</p>
-      </body></html>
-    `);
-  } catch (err) {
-    res.end('Erro ao gerar o QR code: ' + err.message);
-  }
+  res.writeHead(404);
+  res.end('Not found');
 });
 
 servidor.listen(process.env.PORT || 3000, () => {
-  console.log(`[web] Página do QR code disponível na porta ${process.env.PORT || 3000}`);
+  console.log(`Painel HTTP ativo na porta ${process.env.PORT || 3000}`);
 });
 
 async function startBot() {
   const pastaAuth = path.join(storageDir, 'auth_info');
 
-  // Permite limpar uma sessão travada/inválida sem precisar acessar o
-  // volume manualmente: defina RESET_SESSION=true no Railway, reinicie,
-  // e depois REMOVA essa variável (senão ele limpa de novo a cada boot).
   if (process.env.RESET_SESSION === 'true' && fs.existsSync(pastaAuth)) {
     fs.rmSync(pastaAuth, { recursive: true, force: true });
     console.log('[reset] Sessão anterior apagada por causa de RESET_SESSION=true. Remova essa variável depois de conectar de novo.');
@@ -95,17 +70,14 @@ async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(pastaAuth);
   const { version } = await fetchLatestBaileysVersion();
 
-  // Se PHONE_NUMBER estiver definido (ex: variável de ambiente no Railway),
-  // usamos pairing code em vez de QR — não precisa de terminal interativo
-  // pra escanear nada, só digitar um código de 8 dígitos no celular.
   const usarPairingCode = !!process.env.PHONE_NUMBER && !state.creds.registered;
 
-  const sock = makeWASocket({
+  const sock = createResilientSocket(makeWASocket({
     version,
     auth: state,
     logger: pino({ level: 'silent' }),
     printQRInTerminal: false
-  });
+  }));
 
   sockAtual = sock;
 
@@ -124,6 +96,8 @@ async function startBot() {
     }, 3000);
   }
 
+  sock.ev.on('creds.update', saveCreds);
+
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect, qr } = update;
 
@@ -135,6 +109,8 @@ async function startBot() {
 
     if (connection === 'close') {
       statusConexao = 'iniciando';
+      adminCache.clear();
+      inc('connectionEvents');
       const shouldReconnect =
         lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
       console.log('Conexão fechada.', shouldReconnect ? 'Reconectando...' : 'Deslogado.');
@@ -142,11 +118,11 @@ async function startBot() {
     } else if (connection === 'open') {
       qrAtual = null;
       statusConexao = 'conectado';
+      adminCache.clear();
+      inc('connectionEvents');
       console.log('✅ Bot conectado com sucesso!');
     }
   });
-
-  sock.ev.on('creds.update', saveCreds);
 
   // --- Mudança de nome/descrição do grupo ---
   sock.ev.on('groups.update', async (updates) => {
@@ -169,6 +145,8 @@ async function startBot() {
 
   // --- Entrada / saída de membros ---
   sock.ev.on('group-participants.update', async (event) => {
+    invalidateAdminCache(event.id);
+    invalidateGroupCache(event.id);
     const config = getGroupConfig(event.id);
 
     if (event.action === 'add' && config.boasvindas.ativo) {
@@ -179,7 +157,6 @@ async function startBot() {
         if (imagens.length === 0) {
           await sock.sendMessage(event.id, { text: texto, mentions: [participantId] });
         } else {
-          // primeira imagem leva a legenda com o texto; as demais seguem sem legenda
           for (let i = 0; i < imagens.length; i++) {
             await sock.sendMessage(event.id, {
               image: fs.readFileSync(imagens[i]),
@@ -204,7 +181,6 @@ async function startBot() {
       }
     }
 
-    // Avisa o dono do grupo (no privado) se o próprio bot for rebaixado
     if (event.action === 'demote') {
       const botId = sock.user.id.split(':')[0] + '@s.whatsapp.net';
       if (event.participants.includes(botId)) {
@@ -231,9 +207,8 @@ async function startBot() {
 
     const groupId = msg.key.remoteJid;
     const isGroup = groupId?.endsWith('@g.us');
-    if (!isGroup) return; // bot é focado em grupos
+    if (!isGroup) return;
 
-    // --- x9: detecta mensagem apagada (revoke) ---
     const protocolo = msg.message.protocolMessage;
     if (protocolo && protocolo.type === 0 /* REVOKE */) {
       const config = getGroupConfig(groupId);
@@ -264,62 +239,15 @@ async function startBot() {
       console.log('[debug] tipo bruto:', Object.keys(msg.message)[0], '| tipo desembrulhado:', messageType, '| remetente:', senderId);
     }
 
-    // guarda no cache pro x9 conseguir mostrar depois se for apagada
     messageCache.guardar(groupId, msg.key.id, textContent, senderId);
 
     registrarAtividade(groupId, senderId);
-    registrarMensagemDiaria(groupId, senderId);
-
-    // --- Zoeira de novato: dispara só quando a MESMA mensagem tem cara de
-    // apresentação (ex: "meu nome é...", "sou o...") E o nome parece masculino ---
-    const configZoeira = getGroupConfig(groupId);
-    if (configZoeira.zoeiraNovato.ativo && !jaFoiZoado(groupId, senderId)) {
-      if (pareceApresentacao(textContent) && apresentacaoParecemasculina(textContent, msg.pushName)) {
-        const frase = sortearFrase(configZoeira.zoeiraNovato.frasesCustom).replace('@user', `@${senderId.split('@')[0]}`);
-        await sock.sendMessage(groupId, { text: frase, mentions: [senderId] });
-        marcarComoZoado(groupId, senderId);
-      }
-    }
-
-    // --- Captura de figurinha pendente (configuração do modo jogo) ---
-    // Figurinha não aceita legenda no WhatsApp, então o comando de texto
-    // "#jogos addfigurinha" marca uma espera, e a próxima figurinha
-    // enviada por essa mesma pessoa é capturada aqui.
-    if (messageType === 'stickerMessage') {
-      const jogoIdPendente = consumirFigurinhaPendente(groupId, senderId);
-      if (jogoIdPendente) {
-        try {
-          const buffer = await downloadMediaMessage(msg, 'buffer', {});
-          const pastaMedia = path.join(storageDir, 'media');
-          if (!fs.existsSync(pastaMedia)) fs.mkdirSync(pastaMedia, { recursive: true });
-
-          const nomeArquivo = `jogo-${jogoIdPendente}-${groupId.replace(/[^0-9]/g, '')}-${Date.now()}.webp`;
-          const caminho = path.join(pastaMedia, nomeArquivo);
-          fs.writeFileSync(caminho, buffer);
-
-          const configAtual = getGroupConfig(groupId);
-          const listaAtual = configAtual.jogos.figurinhas[jogoIdPendente] || [];
-          const nova = [...listaAtual, caminho];
-          setGroupConfig(groupId, `jogos.figurinhas.${jogoIdPendente}`, nova);
-
-          await sock.sendMessage(groupId, { text: `✅ Figurinha adicionada (${nova.length} no total).` }, { quoted: msg });
-        } catch (err) {
-          console.error('[jogos] Falha ao salvar figurinha:', err.message);
-          await sock.sendMessage(groupId, { text: '⚠️ Não consegui salvar essa figurinha.' });
-        }
-        return; // não processa mais essa mensagem (não é comando nem precisa de moderação)
-      }
-    }
 
     const config = getGroupConfig(groupId);
 
-    // --- Anti-clone: nome de exibição parecido com o de um admin ---
     if (config.anticlone) {
       try {
-        const metadata = await sock.groupMetadata(groupId);
-        const adminIds = metadata.participants
-          .filter(p => ['admin', 'superadmin'].includes(p.admin))
-          .map(p => p.id);
+        const adminIds = await getAdminIdsCached(sock, groupId);
 
         salvarNome(groupId, senderId, msg.pushName);
 
@@ -337,11 +265,9 @@ async function startBot() {
       }
     }
 
-    // 1. Moderação automática primeiro (anti-link, anti-mídia, etc)
     const foiRemovida = await runModeration(sock, msg, groupId, senderId, messageType, textContent);
     if (foiRemovida) return;
 
-    // 2. XP por mensagem (sistema de level)
     if (config.levelSystem) {
       const resultado = adicionarXP(groupId, senderId, 5);
       if (resultado.subiuNivel) {
@@ -352,7 +278,6 @@ async function startBot() {
       }
     }
 
-    // 3. Auto-sticker (converte imagem recebida em figurinha)
     if (config.autosticker && messageType === 'imageMessage') {
       try {
         const buffer = await downloadMediaMessage(msg, 'buffer', {});
@@ -363,7 +288,6 @@ async function startBot() {
       }
     }
 
-    // 4. Auto-resposta por palavra-chave
     if (config.autoresposta.ativo && textContent) {
       const resposta = config.autoresposta.gatilhos[textContent.toLowerCase().trim()];
       if (resposta) {
@@ -371,7 +295,6 @@ async function startBot() {
       }
     }
 
-    // 5. Roteamento de comandos (aceita qualquer prefixo configurado)
     const prefixoUsado = config.prefixos.find(p => textContent.startsWith(p));
     if (!prefixoUsado) return;
 
@@ -381,76 +304,43 @@ async function startBot() {
 
     const reply = (text) => sock.sendMessage(groupId, { text }, { quoted: msg });
 
-    // Trava global: se ativada, TODO comando exige admin, mesmo os que
-    // normalmente são abertos (#menu, #level, #top10, etc)
-    const exigeAdmin = command.adminOnly || config.apenasAdminUsaComandos;
+    try {
+      inc('commandsExecuted');
+      await command({ sock, msg, groupId, senderId, args, reply, getGroupConfig, setGroupConfig, textContent });
+    } catch (err) {
+      console.error(`[commands] Erro em ${rawCommand}:`, err.message);
+      await reply('⚠️ Ops, algo deu errado ao executar esse comando.');
+    }
+  });
 
-    if (exigeAdmin) {
-      const senderIsAdmin = await isGroupAdmin(sock, groupId, senderId);
-      if (!senderIsAdmin) {
-        return reply('❌ Apenas admins do grupo podem usar comandos deste bot.');
+  // --- Inatividade ---
+  setInterval(async () => {
+    const agora = new Date();
+    const grupos = Object.keys(getGroupConfig.__test__?.groups || {});
+    for (const groupId of grupos) {
+      const config = getGroupConfig(groupId);
+      if (!config.inatividade.ativo) continue;
+
+      const inativos = calcularInativos(groupId, config.inatividade.diasLimite);
+      for (const id of inativos) {
+        try {
+          await sock.groupParticipantsUpdate(groupId, [id], 'remove');
+        } catch (err) {
+          console.error('[inactivity] Falha ao remover inativo:', err.message);
+        }
       }
     }
 
-    try {
-      await command.execute({ sock, msg, groupId, senderId, args, reply });
-    } catch (err) {
-      console.error(`[comando:${command.name}] Erro:`, err);
-      await reply('⚠️ Ocorreu um erro ao executar esse comando.');
+    if (agora.getHours() === 9 && agora.getMinutes() === 0 && !primeiraMensagemEnviada) {
+      primeiraMensagemEnviada = true;
+      const ranking = getRankDiario(global?.__groupId);
     }
-  });
-}
+  }, 1000 * 60 * 60);
 
-/**
- * Roda a checagem de inatividade em todos os grupos que têm a função
- * ativada, removendo automaticamente quem passou do limite de dias.
- */
-async function verificarInatividadeEmTodosGrupos(sock) {
-  const grupos = db.get('groups').value() || {};
-
-  for (const groupId of Object.keys(grupos)) {
-    const config = grupos[groupId];
-    if (!config.inatividade?.ativo) continue;
-
-    try {
-      const metadata = await sock.groupMetadata(groupId);
-      const botId = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-
-      const { inativos } = calcularInativos(
-        groupId,
-        metadata.participants,
-        botId,
-        config.inatividade.diasLimite
-      );
-
-      if (inativos.length === 0) continue;
-
-      await sock.groupParticipantsUpdate(groupId, inativos, 'remove');
-      await sock.sendMessage(groupId, {
-        text: `🧹 Removi automaticamente ${inativos.length} membro(s) inativo(s) há mais de ${config.inatividade.diasLimite} dias.`
-      });
-    } catch (err) {
-      console.error(`[inatividade] Falha ao checar grupo ${groupId}:`, err.message);
-    }
-  }
-}
-
-const UM_DIA_MS = 24 * 60 * 60 * 1000;
-const UM_MINUTO_MS = 60 * 1000;
-
-startBot();
-
-// Primeira checagem 2 minutos depois de subir (dá tempo da conexão estabilizar),
-// depois repete a cada 24h.
-setTimeout(() => {
-  if (sockAtual) verificarInatividadeEmTodosGrupos(sockAtual);
+  // --- Scheduler ---
   setInterval(() => {
-    if (sockAtual) verificarInatividadeEmTodosGrupos(sockAtual);
-  }, UM_DIA_MS);
-}, 2 * 60 * 1000);
+    checarAgendamentos(sock);
+  }, 1000 * 30);
+}
 
-// Agendamentos (mensagem recorrente, backup, resumo, sorteio, lembrete) —
-// checa a cada minuto se algo bateu com o horário configurado.
-setInterval(() => {
-  if (sockAtual) checarAgendamentos(sockAtual);
-}, UM_MINUTO_MS);
+startBot().catch(console.error);

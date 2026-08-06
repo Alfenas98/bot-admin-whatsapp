@@ -1,255 +1,298 @@
-# whatsapp-group-bot
+# Bot de Administração de Grupo — WhatsApp
 
-Bot de administração de grupo no WhatsApp usando [Baileys](https://github.com/WhiskeySockets/Baileys),
-com sistema de plugins de comando, moderação automática, jogos interativos
-e automações agendadas. Configuração salva por grupo em `database/db.json`
-(lowdb).
+![WhatsApp](https://img.shields.io/badge/WhatsApp-25D366?style=for-the-badge&logo=whatsapp&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=node.js&logoColor=white)
+![Baileys](https://img.shields.io/badge/Baileys-000000?style=for-the-badge)
+![License: MIT](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
-## Como rodar localmente
+> Bot profissional de administração para grupos WhatsApp, com moderação automática, sistema de plugins, jogos interativos e automações agendadas. As configurações são persistidas por grupo em `database/db.json` usando `lowdb`.
+
+---
+
+## Sumário
+
+- [Sobre](#sobre)
+- [Funcionalidades](#funcionalidades)
+- [Pré-requisitos](#pré-requisitos)
+- [Instalação local](#instalação-local)
+- [Deploy no Railway](#deploy-no-railway)
+- [Comandos](#comandos)
+- [Configurações avançadas](#configurações-avançadas)
+- [Estrutura do projeto](#estrutura-do-projeto)
+- [Extensibilidade](#extensibilidade)
+- [Limitações conhecidas](#limitações-conhecidas)
+
+---
+
+## Sobre
+
+Este projeto utiliza a biblioteca [Baileys](https://github.com/WhiskeySockets/Baileys) para se conectar ao WhatsApp Web e atuar como administrador assistente em grupos. Ele foi projetado para ser:
+
+- **Multi-grupo**: cada grupo tem sua própria configuração isolada.
+- **Extensível**: comandos são plugins carregados automaticamente.
+- **Resiliente**: sessão persistente em volume, reconexão automática e deploy contínuo seguro.
+- **Observável**: logs estruturados com `pino` e página web de status/QR code.
+
+---
+
+## Funcionalidades
+
+- **Moderação automática**: anti-link, anti-fake, anti-palavrão, anti-enquete, anti-contato, anti-clone, anti-mídia, anti-flood, anti-spam e limite de caracteres.
+- **Administração**: ban/promote/rebaixar, fechar/abrir grupo, warn, inatividade, backup, auditoria, broadcast, sincronização de configuração.
+- **Engajamento**: sistema de XP/level, ranking diário/geral, auto-sticker, auto-resposta, enquetes e sorteios.
+- **Jogos**: Eu Nunca, Verdade ou Desafio, Qual Foi? e Enquete Polêmica.
+- **Automações**: agendamento de mensagens, backups, resumos, rankings, sorteios e lembretes recorrentes ou únicos.
+
+---
+
+## Pré-requisitos
+
+- **Node.js** ≥ 18
+- **npm** ≥ 9
+- Conta no [Railway](https://railway.app) (opcional, para deploy)
+- Volume configurado no Railway se for rodar de forma persistente
+
+---
+
+## Instalação local
 
 ```bash
+# Instale as dependências
 npm install
+
+# Inicie o bot
 npm start
 ```
 
-Sem nenhuma variável de ambiente configurada, aparece um QR code no
-terminal — escaneie com o WhatsApp que vai atuar como bot (recomenda-se uma
-conta normal, não Business).
+Na primeira execução, um QR code será exibido no terminal. Escaneie com o WhatsApp que atuará como bot. Recomenda-se usar uma conta pessoal, não Business.
 
-## Rodando 100% no Railway (sem depender do celular/computador ligados)
+---
+
+## Deploy no Railway
 
 ### Variáveis de ambiente
 
-| Variável | Exemplo | Obrigatória? | Pra quê serve |
-|---|---|---|---|
-| `STORAGE_DIR` | `/data` | Sim (recomendado) | Onde ficam salvos a sessão e o banco. Precisa bater com o caminho do Volume. |
-| `PHONE_NUMBER` | `5511999998888` | Não | Se definida, conecta por **código de pareamento** em vez de QR (só dígitos, com DDI, sem `+`). |
-| `TIMEZONE_OFFSET_HOURS` | `-3` | Não, mas recomendado | Ajusta os horários dos agendamentos pro fuso de Brasília (o servidor do Railway costuma rodar em UTC). |
-| `RESET_SESSION` | `true` | Não | Só use temporariamente pra apagar uma sessão travada. **Remova depois de reconectar**, senão ele reseta a cada boot. |
-| `DEBUG` | `true` | Não | Ativa logs extras (tipo de mensagem recebida) pra depurar problemas de moderação. |
+| Variável | Exemplo | Obrigatória | Descrição |
+|----------|---------|-------------|-----------|
+| `STORAGE_DIR` | `/data` | ✅ recomendada | Caminho onde a sessão e o banco serão salvos. Deve coincidir com o ponto de montagem do Volume. |
+| `PHONE_NUMBER` | `5511999998888` | ❌ opcional | Se definida, ativa conexão por **código de pareamento** ao invés de QR. Somente dígitos, com DDI, sem `+`. |
+| `TIMEZONE_OFFSET_HOURS` | `-3` | ❌ recomendada | Ajusta os agendamentos para o fuso de Brasília. O Railway costuma rodar em UTC. |
+| `RESET_SESSION` | `true` | ❌ uso temporário | Apaga a sessão atual para recuperar de conexão travada. **Remova após reconectar**. |
+| `DEBUG` | `true` | ❌ opcional | Habilita logs extras de depuração. |
 
-### Passo a passo pra conectar sem QR
+### Conexão sem QR
 
-1. Configure `PHONE_NUMBER` e `STORAGE_DIR` no Railway.
-2. Adicione um **Volume** no serviço, montado no mesmo caminho de `STORAGE_DIR`.
-3. Suba o código, espere o deploy.
-4. Abra os **Logs** — vai aparecer um `CÓDIGO DE PAREAMENTO`.
-5. No WhatsApp do número configurado: Aparelhos conectados → Conectar um
-   aparelho → "Conectar com número de telefone" → digite o código
-   **rapidamente** (ele expira em poucos minutos).
-6. Depois de conectado, a sessão fica salva no Volume — deploys futuros
-   reconectam sozinhos, sem pedir nada de novo.
+1. Defina `PHONE_NUMBER` e `STORAGE_DIR` no Railway.
+2. Adicione um **Volume** ao serviço, montado em `STORAGE_DIR`.
+3. Faça o deploy e abra os **Logs**.
+4. Copie o `CÓDIGO DE PAREAMENTO`.
+5. No WhatsApp: *Aparelhos conectados → Conectar com número de telefone* e digite o código rapidamente.
+6. A sessão ficará salva no Volume. Próximos deploys reconectarão automaticamente.
 
-### Alternativa: QR code numa página web
+### Conexão por QR code
 
-Se preferir QR em vez de código de pareamento, **não defina** `PHONE_NUMBER`.
-O bot sobe um servidor web simples (na porta de `PORT`, ou 3000 por padrão)
-mostrando o QR code como imagem. Gere um domínio público em Settings →
-Networking → "Generate Domain" no Railway, e abra essa URL — o QR aparece
-lá, atualizando sozinho a cada 15s.
+Se `PHONE_NUMBER` não estiver definida, o bot publica uma página web com o QR code atualizando automaticamente.
 
-## ⚠️ Atualizar o código NÃO apaga as configurações do Railway
+1. Gere um domínio público em **Settings → Networking → Generate Domain**.
+2. Acesse a URL pública; o QR aparecerá na página e será renovado a cada 15s.
+3. Escaneie com o WhatsApp para conectar.
 
-Isso é importante: **variáveis de ambiente e o Volume são configurações do
-serviço no Railway, completamente separadas do código no GitHub**. Subir
-arquivos novos pro repositório e fazer redeploy:
+---
 
-- ✅ NÃO apaga `PHONE_NUMBER`, `STORAGE_DIR`, `TIMEZONE_OFFSET_HOURS` nem
-  nenhuma outra variável — elas continuam lá até você mesmo apagar/mudar
-  manualmente na aba Variables.
-- ✅ NÃO apaga o conteúdo do Volume — a sessão do WhatsApp e o
-  `database.json` (todas as configs de grupo, XP, warns, agendamentos, etc)
-  continuam intactos.
-- ✅ O bot reinicia por alguns segundos durante o deploy e reconecta sozinho
-  usando a sessão salva — sem pedir QR/código de novo.
+## ⚠️ Atualizações não apagam dados do Railway
 
-**A única forma de perder algo é:**
-- Deixar `RESET_SESSION=true` esquecido (apaga a sessão a cada boot).
-- Apagar ou desconectar o Volume manualmente nas configurações do serviço.
-- O WhatsApp deslogar a sessão por conta própria (uso raro, geralmente após
-  muitas semanas sem abrir o app no celular).
+Variáveis de ambiente e Volume são independentes do código no GitHub.
 
-Então: **pode subir código novo sem medo**, contanto que não mexa nas
-Variables/Volume por conta própria.
+- ✅ Atualizar o repositório **não remove** variáveis configuradas.
+- ✅ Atualizar o repositório **não apaga** o conteúdo do Volume.
+- ✅ O bot reinicia e reconecta automaticamente com a sessão salva.
 
-## Lista completa de comandos
+Riscos reais de perda:
+- deixar `RESET_SESSION=true` configurado;
+- remover o Volume manualmente;
+- logout espontâneo por parte do WhatsApp após longo período de inatividade.
 
-Chame `#menu` no grupo pra ver o painel de status, ou `#menu seguranca` /
-`#menu admin` / `#menu engajamento` / `#menu geral` pra ver por categoria.
-A maioria dos comandos de toggle funciona chamado sozinho (liga se tava
-off, desliga se tava on).
+Portanto, **pode atualizar o código com segurança**, contanto que não altere `Variables` ou `Volume`.
+
+---
+
+## Comandos
+
+Use `#menu` para ver o painel geral, ou `#menu <categoria>` para filtrar por tema.
 
 ### 🔐 Segurança
-- `#antilink` — bloqueia link de convite de grupo (chat.whatsapp.com/...)
-- `#antilinkhard` — bloqueia QUALQUER link
-- `#antifake` + `#ddi <código>` — bloqueia números fora do DDI permitido
+
+- `#antilink` — bloqueia convites de grupo
+- `#antilinkhard` — bloqueia qualquer link
+- `#antifake` + `#ddi <código>` — restringe DDI permitido
 - `#antipalavrao` + `#palavrao add|remover|lista`
-- `#antienquete` — bloqueia enquetes enviadas por membros
+- `#antienquete` — bloqueia enquetes de membros
 - `#anticontato` — bloqueia envio de vCard
-- `#x9` — avisa quando alguém apaga mensagem no grupo
-- `#anticlone` — avisa quando um nome de exibição fica parecido com o de
-  um admin (possível golpe)
+- `#x9` — alerta sobre mensagens apagadas
+- `#anticlone` — alerta nomes parecidos com admins
 - `#antiimagem`, `#antivideo`, `#antiaudio`, `#antisticker`, `#antidocumento`
 - `#antifloodfigurinha on|off|limite|tempo`
-- `#antispamrepetido on|off|limite` — bloqueia mensagem repetida N vezes seguidas
+- `#antispamrepetido on|off|limite`
 - `#antimarcacaomassa on|off|limite`
 - `#limitecaracteres on|off|<número>`
-- `#whitelist add|remover <numero>` — libera um número específico do anti-link
+- `#whitelist add|remover <numero>`
 
 ### 🛡️ Administração
-- `#soadm on|off` — só admins mandam mensagem
-- `#apenasadmin on|off` — só admins podem usar **qualquer** comando do bot
+
+- `#soadm on|off` — apenas admins enviam mensagem
+- `#apenasadmin on|off` — apenas admins usam comandos
 - `#ban @user`, `#promover @user`, `#rebaixar @user`
 - `#fechar` / `#abrir`
-- `#apagar` (responda a mensagem)
+- `#apagar` — apaga a mensagem respondida
 - `#prefixo add|remover <símbolo>`
-- `#inatividade on|off|dias <número>` + `#inativos [remover]`
-- `#warn @user`, `#warns @user`, `#resetwarn @user`, `#warnsystem limite <n>`
-- `#linkgrupo` — gera o link de convite atual
-- `#backup` — envia o arquivo de dados como documento no WhatsApp
-- `#auditoria on|off|destino <numero>` — log de ban/promover/rebaixar/warn
-- `#alertagrupo on|off` — avisa quando nome/descrição do grupo mudam
-- `#broadcast <mensagem>` / `origem on|off` / `receber on|off`
-- `#sync definirmodelo` / `#sync aplicar` — replica config entre grupos
+- `#inatividade on|off|dias <número>` e `#inativos [remover]`
+- `#warn`, `#warns`, `#resetwarn` e `#warnsystem limite <n>`
+- `#linkgrupo` — link de convite atual
+- `#backup` — exporta o banco como documento
+- `#auditoria on|off|destino <numero>`
+- `#alertagrupo on|off`
+- `#broadcast` e modos `origem` / `receber`
+- `#sync definirmodelo` / `#sync aplicar`
 - `#agendamento mensagem|backup|resumo|resumodiario|sorteio|lembrete|listar|remover`
 
 ### ⭐ Engajamento
-- `#levelsystem on|off` + `#level`
-- `#top10` — ranking geral (desde sempre)
-- `#rankdiario` — ranking só de hoje, reseta à meia-noite
+
+- `#levelsystem on|off` e `#level`
+- `#top10` e `#rankdiario`
 - `#autosticker on|off`
 - `#autoresposta on|off|add|remover|lista`
-- `#enquete Pergunta | Opção 1 | Opção 2` — enquete nativa do WhatsApp
+- `#enquete Pergunta | Opção 1 | Opção 2`
 - `#sorteio <segundos> <prêmio>`
 
 ### 🎮 Jogos
-- `#jogos` — lista os jogos disponíveis
-- `#jogo <número>` — inicia a partida
-- `#jogos addfigurinha <número>` — configura figurinhas (2 passos: comando + mandar a figurinha em seguida)
+
+- `#jogos` — lista disponíveis
+- `#jogo <número>` — inicia partida
+- `#jogos addfigurinha <número>`
 - `#jogos figurinhas limpar <número>`
 - `#jogos perguntas add|listar|remover|limpar <número>`
-- `#pararjogo` — interrompe a qualquer momento
+- `#pararjogo`
 
-Jogos disponíveis: **Eu Nunca** (106 perguntas), **Eu Nunca +18** (34,
-conteúdo adulto), **Verdade ou Desafio** (30), **Qual Foi?** (24, livre
-compartilhamento), **Enquete Polêmica** (24, usa enquete nativa do
-WhatsApp em vez de figurinha).
+Jogos incluídos: **Eu Nunca**, **Eu Nunca +18**, **Verdade ou Desafio**, **Qual Foi?** e **Enquete Polêmica**.
 
 ### ⚙️ Geral
+
 - `#boasvindas on|off|mensagem <texto>|imagem|imagens lista|imagens limpar`
 - `#saida on|off|mensagem <texto>`
-- `#menu` / `#menu <categoria>`
+- `#menu` e `#menu <categoria>`
 
-## Detecção de inatividade
+---
 
-`#inatividade on` + `#inatividade dias <número>` (padrão: 30 dias sem
-mensagem). Checagem automática a cada 24h. Admins nunca são removidos.
-Membros sem histórico (de antes da função ser ligada) não são removidos na
-primeira checagem — só passam a ser rastreados a partir dali.
-`#inativos` mostra a lista sem remover; `#inativos remover` roda na hora.
+## Configurações avançadas
 
-## Automações agendadas
+### Inatividade
 
-O `#agendamento` cobre várias automações num só sistema:
+- Ativa com `#inatividade on` e define limite com `#inatividade dias <número>`.
+- A checagem roda automaticamente a cada 24h.
+- Admins nunca são removidos.
+- `#inativos` lista; `#inativos remover` executa a remoção.
 
-- **Mensagem recorrente**: `#agendamento mensagem <HH:MM> <dias|todos> <texto>`
-- **Backup automático**: `#agendamento backup <HH:MM> <dias|todos>`
-- **Resumo automático (top 10 geral)**: `#agendamento resumo <HH:MM> <dias|todos>`
-- **Ranking diário automático**: `#agendamento resumodiario <HH:MM> <dias|todos>`
-- **Sorteio automático**: `#agendamento sorteio <HH:MM> <dias|todos> <segundos> <prêmio>`
-- **Lembrete**: `#agendamento lembrete <MM-DD ou YYYY-MM-DD> <HH:MM> <texto>`
-  (formato `MM-DD` repete todo ano — bom pra aniversário; `YYYY-MM-DD`
-  dispara uma vez só e depois se autoapaga)
+### Agendamentos
 
-`#agendamento listar` mostra tudo configurado; `#agendamento remover <número>` apaga um.
+- `#agendamento mensagem <HH:MM> <dias|todos> <texto>`
+- `#agendamento backup <HH:MM> <dias|todos>`
+- `#agendamento resumo <HH:MM> <dias|todos>`
+- `#agendamento resumodiario <HH:MM> <dias|todos>`
+- `#agendamento sorteio <HH:MM> <dias|todos> <segundos> <prêmio>`
+- `#agendamento lembrete <MM-DD|YYYY-MM-DD> <HH:MM> <texto>`
+- `#agendamento listar` e `#agendamento remover <número>`
 
-Dias aceitos: `dom,seg,ter,qua,qui,sex,sab` (separados por vírgula) ou `todos`.
+Formato de dias aceito: `dom,seg,ter,qua,qui,sex,sab` ou `todos`.
 
-⚠️ Os horários dependem do fuso do servidor — configure
-`TIMEZONE_OFFSET_HOURS=-3` no Railway pra bater com o horário de Brasília.
+> Ajuste `TIMEZONE_OFFSET_HOURS=-3` no Railway para horário de Brasília.
 
-## Log de auditoria
+### Auditoria
 
-`#auditoria on` registra `#ban`, `#promover`, `#rebaixar` e remoção
-automática por `#warn`, mandando um log formatado. Por padrão manda no
-próprio grupo; `#auditoria destino <numero>` redireciona pro privado de
-alguém (útil pra um "grupo de admins" só de vocês).
+- `#auditoria on` registra `#ban`, `#promover`, `#rebaixar` e remoções por warn.
+- Saída padrão: o próprio grupo.
+- `#auditoria destino <numero>` envia para um privado.
 
-## Broadcast entre grupos
+### Broadcast entre grupos
 
-Pra um grupo poder mandar aviso pra outros:
-1. No grupo que vai **enviar**: `#broadcast origem on`
-2. Nos grupos que vão **receber**: `#broadcast receber on`
-3. No grupo de origem: `#broadcast <sua mensagem>`
+1. Grupo remetente: `#broadcast origem on`
+2. Grupos destinatários: `#broadcast receber on`
+3. Envio: `#broadcast <mensagem>`
 
-## Sincronizar configuração entre grupos
+### Sincronização entre grupos
 
-1. No grupo que vai servir de modelo: `#sync definirmodelo`
-2. Em qualquer outro grupo: `#sync aplicar` — copia moderação, boas-vindas,
-   level, prefixos, etc (não copia estado de jogo em andamento nem
-   figurinhas configuradas).
+1. Grupo modelo: `#sync definirmodelo`
+2. Grupo alvo: `#sync aplicar`
 
-## O que NÃO está incluído
+---
 
-- **Anti-figurinha/imagem NSFW**: exigiria API externa de moderação visual.
-- **Pin nativo de mensagem**: não há garantia de suporte confiável na
-  versão do Baileys usada; a alternativa é repostar via `#agendamento mensagem`.
+## Estrutura do projeto
 
-## Estrutura
-
-```
-index.js                    -> conexão Baileys, servidor de QR, roteamento de eventos
-lib/database.js              -> config por grupo (lowdb) + merge automático de defaults
-lib/storage.js                -> caminho configurável de armazenamento (STORAGE_DIR)
-lib/commandLoader.js         -> carrega automaticamente os arquivos de commands/
-lib/permissions.js           -> checagem de admin de grupo / admin do bot
-lib/activity.js                -> última atividade (pra inatividade)
-lib/inactivityChecker.js      -> cálculo de quem está inativo
-lib/dailyRank.js               -> ranking diário (reseta à meia-noite)
-lib/xp.js                     -> sistema de level/XP
-lib/warns.js                  -> sistema de advertências
-lib/auditLog.js                -> log de ações administrativas
-lib/scheduler.js               -> motor de agendamentos (#agendamento)
-lib/floodTracker.js           -> controle de flood de figurinhas (memória)
-lib/spamTracker.js            -> controle de mensagem repetida (memória)
-lib/similarity.js / anticlone.js -> detecção de nome parecido com admin
-lib/messageCache.js            -> cache de mensagens recentes (pro x9)
-lib/unwrapMessage.js           -> desembrulha mensagem temporária/visualização única
-lib/pendingCapture.js          -> captura de figurinha em 2 passos (jogos)
-lib/gameRuntime.js             -> motor dos jogos (figurinha e enquete nativa)
-lib/gamesList.js / lib/games/*.js -> definição de cada jogo
-middlewares/moderation.js     -> todas as regras automáticas
-commands/*.js                 -> cada comando é um plugin isolado
+```text
+index.js                     -> conexão Baileys, servidor web, roteamento de eventos
+lib/
+  database.js                -> configuração por grupo via lowdb + defaults
+  storage.js                 -> caminho configurável de armazenamento
+  commandLoader.js           -> carregamento automático de plugins
+  permissions.js             -> checagem de admin de grupo/admin do bot
+  activity.js                -> última atividade por membro
+  inactivityChecker.js       -> cálculo e remoção de inativos
+  dailyRank.js                -> ranking diário
+  xp.js                      -> sistema de level/XP
+  warns.js                   -> advertências
+  auditLog.js                -> log de ações administrativas
+  scheduler.js               -> agendamentos
+  floodTracker.js            -> controle de flood de figurinhas
+  spamTracker.js             -> controle de mensagem repetida
+  similarity.js / anticlone.js -> detecção de clone de admin
+  messageCache.js            -> cache de mensagens recentes
+  unwrapMessage.js           -> desembrulho de mensagens temporárias
+  pendingCapture.js          -> captura de figurinha em 2 passos
+  gameRuntime.js             -> motor de jogos
+  gamesList.js / lib/games/* -> catálogo e conteúdos de jogos
+middlewares/
+  moderation.js              -> regras automáticas de moderação
+commands/*.js                -> plugins de comando
+database/
+  db.json                    -> banco local por grupo
 ```
 
-## Criando um novo comando
+---
 
-Crie um arquivo em `commands/`, exportando:
+## Extensibilidade
+
+### Novo comando
+
+Crie um arquivo em `commands/` exportando:
 
 ```js
 module.exports = {
   name: 'meucomando',
-  aliases: ['mc'],       // opcional
-  adminOnly: true,        // opcional
+  aliases: ['mc'],
+  adminOnly: false,
   async execute({ sock, groupId, senderId, args, reply }) {
-    return reply('resposta');
+    return reply('funcionou');
   }
 };
 ```
 
-Carregado automaticamente, sem precisar registrar em nenhum outro lugar.
+O carregamento é automático; não é necessário registrar manualmente.
 
-## Criando um novo jogo
+### Novo jogo
 
-Crie um arquivo em `lib/games/`, exportando `{ id, nome, instrucoes,
-perguntas }` (jogos de figurinha) ou `{ id, nome, tipo: 'enquete', opcoes,
-instrucoes, perguntas }` (jogos de enquete nativa). Registre no array em
-`lib/gamesList.js` — a posição na lista define a numeração do `#jogo`.
+Crie um arquivo em `lib/games/` exportando `id`, `nome`, `instrucoes` e `perguntas`, ou `tipo: 'enquete'` com `opcoes` e `perguntas`. Registre em `lib/gamesList.js`. A posição na lista define o número do `#jogo`.
 
-## Deploy no Railway — checklist geral
+---
 
-1. Suba pro GitHub (`.gitignore` já exclui `auth_info/` e o banco).
+## Limitações conhecidas
+
+- **Anti-NSFW visual**: não incluído, pois exigiria API externa de moderação de imagem.
+- **Pin nativo de mensagem**: não há garantia de suporte confiável na versão atual do Baileys. Alternativa recomendada: `#agendamento mensagem`.
+
+---
+
+## Deploy — checklist rápido
+
+1. Suba o repositório para o GitHub.
 2. Conecte o repositório no Railway.
-3. Configure as variáveis da tabela acima + o Volume.
-4. A lib `sharp` (usada no `#autosticker`) às vezes precisa de dependências
-   de sistema (libvips) — se o build falhar por causa dela, vale investigar.
+3. Configure as variáveis de ambiente e o Volume conforme esta documentação.
+4. Verifique dependências de sistema para `sharp` em caso de erro de build.
