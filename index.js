@@ -302,7 +302,14 @@ async function startBot() {
     const command = commands.get((rawCommand || '').toLowerCase());
     if (!command) return;
 
-    const reply = (text) => sock.sendMessage(groupId, { text }, { quoted: msg });
+    const reply = async (text) => {
+      try {
+        await sock.sendMessage(groupId, { text }, { quoted: msg });
+      } catch (err) {
+        console.error('[reply] Falha ao enviar resposta:', err.message);
+        throw err;
+      }
+    };
 
     try {
       inc('commandsExecuted');
