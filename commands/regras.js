@@ -1,4 +1,4 @@
-const { getGroupConfig } = require('../../lib/database');
+const { getGroupConfig } = require('../lib/database');
 
 module.exports = {
   name: 'regras',
