@@ -8,6 +8,7 @@ const {
 const pino = require('pino');
 const sharp = require('sharp');
 const qrcode = require('qrcode-terminal');
+const QRCode = require('qrcode');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -52,6 +53,37 @@ const servidor = http.createServer(async (req, res) => {
       qr: !!qrAtual,
       metrics: get()
     }));
+  }
+
+  if (req.url === '/qr') {
+    if (statusConexao === 'conectado') {
+      res.writeHead(200);
+      return res.end('<h2>✅ Bot já está conectado. Não há QR pra mostrar.</h2>');
+    }
+
+    if (!qrAtual) {
+      res.writeHead(200, { Refresh: '3' });
+      return res.end('<h2>⏳ Gerando QR code... essa página atualiza sozinha.</h2>');
+    }
+
+    try {
+      const imagemDataUrl = await QRCode.toDataURL(qrAtual, { width: 320, margin: 1 });
+      res.writeHead(200, { Refresh: '5' });
+      return res.end(`
+        <html>
+          <head><meta charset="utf-8"><title>Conectar WhatsApp</title></head>
+          <body style="font-family: sans-serif; text-align: center; padding-top: 40px;">
+            <h2>Escaneie com o WhatsApp</h2>
+            <p>Aparelhos conectados &gt; Conectar um aparelho</p>
+            <img src="${imagemDataUrl}" alt="QR code" />
+            <p style="color: #888;">Essa página atualiza sozinha a cada 5s — sempre mostra o QR mais atual, nunca escaneie um print antigo.</p>
+          </body>
+        </html>
+      `);
+    } catch (err) {
+      res.writeHead(500);
+      return res.end('Erro ao gerar QR: ' + err.message);
+    }
   }
 
   res.writeHead(404);
