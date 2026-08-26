@@ -1,6 +1,6 @@
 const { getGroupConfig, setGroupConfig } = require('../lib/database');
 const { listaJogos } = require('../lib/gamesList');
-const { aguardarFigurinha } = require('../lib/pendingCapture');
+const { iniciarColeta } = require('../lib/pendingCapture');
 
 module.exports = {
   name: 'jogos',
@@ -10,8 +10,9 @@ module.exports = {
     const config = getGroupConfig(groupId);
 
     // --- #jogos addfigurinha <número> ---
-    // Figurinha não aceita legenda no WhatsApp, então funciona em 2 passos:
-    // 1) manda esse comando de texto, 2) manda a figurinha logo em seguida
+    // Figurinha não aceita legenda no WhatsApp, então funciona em 3 passos:
+    // 1) manda esse comando de texto, 2) manda quantas figurinhas quiser,
+    // 3) manda "#salvar figurinhas" pra gravar tudo de uma vez
     if (sub === 'addfigurinha') {
       const numero = parseInt(args[1], 10);
       const jogo = listaJogos[numero - 1];
@@ -21,10 +22,11 @@ module.exports = {
         return reply(`O jogo "${jogo.nome}" usa enquete nativa do WhatsApp, não precisa de figurinha.`);
       }
 
-      aguardarFigurinha(groupId, senderId, jogo.id);
+      iniciarColeta(groupId, senderId, jogo.id);
       return reply(
-        `📌 Beleza! Agora manda a figurinha que você quer adicionar ao jogo "${jogo.nome}" ` +
-        `(só a figurinha, sozinha, sem precisar de legenda). Você tem 2 minutos.`
+        `📌 Beleza! Agora manda quantas figurinhas quiser pro jogo "${jogo.nome}" ` +
+        `(uma por vez, sem legenda). Quando terminar, manda "#salvar figurinhas" pra salvar tudo de uma vez. ` +
+        `Você tem 10 minutos.`
       );
     }
 
@@ -97,7 +99,7 @@ module.exports = {
     return reply(
       `🎮 *Jogos disponíveis:*\n${texto}\n\n` +
       `#jogo <número> — começa o jogo\n` +
-      `#jogos addfigurinha <número> — depois manda a figurinha em seguida\n` +
+      `#jogos addfigurinha <número> — depois manda as figurinhas e finalize com #salvar figurinhas\n` +
       `#jogos figurinhas limpar <número>\n` +
       `#jogos perguntas add <número> <texto>\n` +
       `#jogos perguntas listar <número>\n` +
