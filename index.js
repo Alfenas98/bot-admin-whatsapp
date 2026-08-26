@@ -279,6 +279,34 @@ async function startBot() {
       }
     }
 
+    if (messageType === 'stickerMessage') {
+      const jogoIdPendente = consumirFigurinhaPendente(groupId, senderId);
+      if (jogoIdPendente) {
+        try {
+          const buffer = await downloadMediaMessage(msg, 'buffer', {});
+          const pastaFigurinhas = path.join(storageDir, 'media', 'jogos');
+          if (!fs.existsSync(pastaFigurinhas)) fs.mkdirSync(pastaFigurinhas, { recursive: true });
+
+          const nomeArquivo = `figurinha-${jogoIdPendente}-${groupId.replace(/[^0-9]/g, '')}-${Date.now()}.webp`;
+          const caminho = path.join(pastaFigurinhas, nomeArquivo);
+          fs.writeFileSync(caminho, buffer);
+
+          const configAtual = getGroupConfig(groupId);
+          const figurinhasAtuais = configAtual.jogos.figurinhas[jogoIdPendente] || [];
+          const novaLista = [...figurinhasAtuais, caminho];
+          setGroupConfig(groupId, `jogos.figurinhas.${jogoIdPendente}`, novaLista);
+
+          await sock.sendMessage(groupId, {
+            text: `✅ Figurinha adicionada ao jogo (${novaLista.length} no total).`
+          }, { quoted: msg });
+        } catch (err) {
+          console.error('[jogos] Falha ao salvar figurinha:', err.message);
+          await sock.sendMessage(groupId, { text: '⚠️ Não consegui salvar essa figurinha.' }, { quoted: msg });
+        }
+        return;
+      }
+    }
+
     if (config.autosticker && messageType === 'imageMessage') {
       try {
         const buffer = await downloadMediaMessage(msg, 'buffer', {});
