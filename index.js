@@ -16,7 +16,7 @@ const { runModeration } = require('./middlewares/moderation');
 const { getGroupConfig, setGroupConfig } = require('./lib/database');
 const { salvarNome, verificarClone } = require('./lib/anticlone');
 const { storageDir } = require('./lib/storage');
-const { getAdminIdsCached, invalidateGroupCache } = require('./lib/groupCache');
+const { getAdminIdsCached, isGroupAdminCached, invalidateGroupCache } = require('./lib/groupCache');
 const { desembrulharMensagem } = require('./lib/unwrapMessage');
 const { temColetaAtiva, adicionarFigurinhaColeta } = require('./lib/pendingCapture');
 const { checarAgendamentos, agoraAjustado } = require('./lib/scheduler');
@@ -327,6 +327,13 @@ async function startBot() {
     };
 
     try {
+      if (command.adminOnly || config.apenasAdminUsaComandos) {
+        const ehAdmin = await isGroupAdminCached(sock, groupId, senderId);
+        if (!ehAdmin) {
+          return reply('🔒 Esse comando só pode ser usado por administradores do grupo.');
+        }
+      }
+
       inc('commandsExecuted');
       await command.execute({ sock, msg, groupId, senderId, args, reply, getGroupConfig, setGroupConfig, textContent });
     } catch (err) {
