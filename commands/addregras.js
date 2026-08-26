@@ -1,4 +1,4 @@
-const { getGroupConfig, setGroupConfig } = require('../../lib/database');
+const { getGroupConfig, setGroupConfig } = require('../lib/database');
 
 module.exports = {
   name: 'addregras',
