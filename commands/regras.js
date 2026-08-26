@@ -11,6 +11,27 @@ module.exports = {
       return reply('📋 Nenhuma regra cadastrada para este grupo.\nUm admin pode usar #addregras para definir.');
     }
 
-    await reply(`📋 *REGRAS DO GRUPO*\n\n${regras}`);
+    const LIMITE = 3500;
+    if (regras.length <= LIMITE) {
+      return reply(regras);
+    }
+
+    const linhas = regras.split('\n');
+    const partes = [];
+    let atual = '';
+
+    for (const linha of linhas) {
+      if ((atual + '\n' + linha).length > LIMITE && atual) {
+        partes.push(atual.trim());
+        atual = '';
+      }
+      atual += (atual ? '\n' : '') + linha;
+    }
+
+    if (atual.trim()) partes.push(atual.trim());
+
+    for (const parte of partes) {
+      await reply(parte);
+    }
   }
 };
