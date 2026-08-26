@@ -6,6 +6,7 @@ const {
   downloadMediaMessage
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
+const sharp = require('sharp');
 const qrcode = require('qrcode-terminal');
 const http = require('http');
 const fs = require('fs');
@@ -23,7 +24,7 @@ const { checarAgendamentos, agoraAjustado } = require('./lib/scheduler');
 const { createResilientSocket } = require('./lib/resilientSocket');
 const messageCache = require('./lib/messageCache');
 const { adicionarXP } = require('./lib/xp');
-const { registrarAtividade } = require('./lib/activity');
+const { registrarAtividade, registrarEntrada } = require('./lib/activity');
 const { calcularInativos } = require('./lib/inactivityChecker');
 const { getRankDiario } = require('./lib/dailyRank');
 const { inc, get } = require('./lib/metrics');
@@ -33,6 +34,7 @@ const commands = loadCommands();
 let statusConexao = 'iniciando';
 let qrAtual = null;
 let primeiraMensagemEnviada = false;
+let sockAtual = null;
 const adminCache = new Map();
 
 const servidor = http.createServer(async (req, res) => {
