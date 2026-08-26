@@ -18,7 +18,7 @@ const { salvarNome, verificarClone } = require('./lib/anticlone');
 const { storageDir } = require('./lib/storage');
 const { getAdminIdsCached, invalidateGroupCache } = require('./lib/groupCache');
 const { desembrulharMensagem } = require('./lib/unwrapMessage');
-const { consumirFigurinhaPendente } = require('./lib/pendingCapture');
+const { temColetaAtiva, adicionarFigurinhaColeta } = require('./lib/pendingCapture');
 const { checarAgendamentos, agoraAjustado } = require('./lib/scheduler');
 const { createResilientSocket } = require('./lib/resilientSocket');
 const messageCache = require('./lib/messageCache');
@@ -146,7 +146,6 @@ async function startBot() {
 
   // --- Entrada / saída de membros ---
   sock.ev.on('group-participants.update', async (event) => {
-    invalidateAdminCache(event.id);
     invalidateGroupCache(event.id);
     const config = getGroupConfig(event.id);
 
@@ -279,31 +278,18 @@ async function startBot() {
       }
     }
 
-    if (messageType === 'stickerMessage') {
-      const jogoIdPendente = consumirFigurinhaPendente(groupId, senderId);
-      if (jogoIdPendente) {
-        try {
-          const buffer = await downloadMediaMessage(msg, 'buffer', {});
-          const pastaFigurinhas = path.join(storageDir, 'media', 'jogos');
-          if (!fs.existsSync(pastaFigurinhas)) fs.mkdirSync(pastaFigurinhas, { recursive: true });
-
-          const nomeArquivo = `figurinha-${jogoIdPendente}-${groupId.replace(/[^0-9]/g, '')}-${Date.now()}.webp`;
-          const caminho = path.join(pastaFigurinhas, nomeArquivo);
-          fs.writeFileSync(caminho, buffer);
-
-          const configAtual = getGroupConfig(groupId);
-          const figurinhasAtuais = configAtual.jogos.figurinhas[jogoIdPendente] || [];
-          const novaLista = [...figurinhasAtuais, caminho];
-          setGroupConfig(groupId, `jogos.figurinhas.${jogoIdPendente}`, novaLista);
-
+    if (messageType === 'stickerMessage' && temColetaAtiva(groupId, senderId)) {
+      try {
+        const buffer = await downloadMediaMessage(msg, 'buffer', {});
+        const quantidade = adicionarFigurinhaColeta(groupId, senderId, buffer);
+        if (quantidade !== null) {
           await sock.sendMessage(groupId, {
-            text: `✅ Figurinha adicionada ao jogo (${novaLista.length} no total).`
+            text: `📥 Figurinha guardada (${quantidade} até agora). Manda mais ou "#salvar figurinhas" pra concluir.`
           }, { quoted: msg });
-        } catch (err) {
-          console.error('[jogos] Falha ao salvar figurinha:', err.message);
-          await sock.sendMessage(groupId, { text: '⚠️ Não consegui salvar essa figurinha.' }, { quoted: msg });
+          return;
         }
-        return;
+      } catch (err) {
+        console.error('[jogos] Falha ao guardar figurinha da coleta:', err.message);
       }
     }
 
