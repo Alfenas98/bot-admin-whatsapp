@@ -12,20 +12,23 @@ module.exports = {
     }
 
     const LIMITE = 3500;
+
     if (regras.length <= LIMITE) {
       return reply(regras);
     }
 
-    const linhas = regras.split('\n');
     const partes = [];
     let atual = '';
 
-    for (const linha of linhas) {
-      if ((atual + '\n' + linha).length > LIMITE && atual) {
+    for (const linha of regras.split('\n')) {
+      const candidato = atual ? atual + '\n' + linha : linha;
+
+      if (candidato.length > LIMITE && atual) {
         partes.push(atual.trim());
-        atual = '';
+        atual = linha;
+      } else {
+        atual = candidato;
       }
-      atual += (atual ? '\n' : '') + linha;
     }
 
     if (atual.trim()) partes.push(atual.trim());
