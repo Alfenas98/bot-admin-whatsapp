@@ -17,15 +17,16 @@ module.exports = {
       return reply(regras);
     }
 
+    const blocos = regras.split(/(?=(?:💜|🌌|🚫|⛔|👑|⚖️|✦|🌙|✨|🔞|💎|🔥))/g).filter(Boolean);
     const partes = [];
     let atual = '';
 
-    for (const linha of regras.split('\n')) {
-      const candidato = atual ? atual + '\n' + linha : linha;
+    for (const bloco of blocos) {
+      const candidato = atual ? atual + '\n' + bloco : bloco;
 
       if (candidato.length > LIMITE && atual) {
         partes.push(atual.trim());
-        atual = linha;
+        atual = bloco;
       } else {
         atual = candidato;
       }
