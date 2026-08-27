@@ -18,6 +18,8 @@ module.exports = {
 
       const nome1 = random1.displayName || random1.name || random1.id.split('@')[0];
       const nome2 = random2.displayName || random2.name || random2.id.split('@')[0];
+      const mention1 = '@' + random1.id.split('@')[0];
+      const mention2 = '@' + random2.id.split('@')[0];
 
       const compatibilidade = Math.floor(Math.random() * 100) + 1;
 
@@ -30,9 +32,9 @@ module.exports = {
 
       const texto =
         `💘 *SHIP DO GRUPO*\n\n` +
-        `👤 ${nome1}\n` +
+        `👤 ${mention1}\n` +
         `❤️ X ❤️\n` +
-        `👤 ${nome2}\n\n` +
+        `👤 ${mention2}\n\n` +
         `📊 Compatibilidade: ${compatibilidade}%\n` +
         `${comentario}`;
 
