@@ -299,8 +299,18 @@ async function startBot() {
       }
     }
 
-    const foiRemovida = await runModeration(sock, msg, groupId, senderId, messageType, textContent);
+        const foiRemovida = await runModeration(sock, msg, groupId, senderId, messageType, textContent);
     if (foiRemovida) return;
+
+    const configMute = getGroupConfig(groupId);
+    if (configMute.muted && configMute.muted.includes(senderId)) {
+      try {
+        await sock.sendMessage(groupId, { delete: msg.key });
+      } catch (err) {
+        console.error('[mute] Falha ao deletar:', err.message);
+      }
+      return;
+    }
 
     if (config.levelSystem) {
       const resultado = adicionarXP(groupId, senderId, 5);
