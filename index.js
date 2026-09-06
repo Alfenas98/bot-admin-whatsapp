@@ -28,6 +28,7 @@ const { adicionarXP } = require('./lib/xp');
 const { registrarAtividade, registrarEntrada } = require('./lib/activity');
 const { calcularInativos } = require('./lib/inactivityChecker');
 const { getRankDiario } = require('./lib/dailyRank');
+const { salvarMidia, listarMidiasSalvas } = require('./lib/mediaSave');
 const { inc, get } = require('./lib/metrics');
 
 const commands = loadCommands();
@@ -351,6 +352,24 @@ async function startBot() {
       const resposta = config.autoresposta.gatilhos[textContent.toLowerCase().trim()];
       if (resposta) {
         await sock.sendMessage(groupId, { text: resposta }, { quoted: msg });
+      }
+    }
+
+    // Salvar mídia automaticamente
+    if (
+      messageType === 'imageMessage' ||
+      messageType === 'videoMessage' ||
+      messageType === 'audioMessage' ||
+      messageType === 'stickerMessage' ||
+      messageType === 'documentMessage'
+    ) {
+      try {
+        const caminho = await salvarMidia(msg, storageDir);
+        if (caminho) {
+          console.log(`[midia-salva] Arquivo salvo: ${caminho}`);
+        }
+      } catch (err) {
+        console.error('[midia-salva] Erro:', err.message);
       }
     }
 
