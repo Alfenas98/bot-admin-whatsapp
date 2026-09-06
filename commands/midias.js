@@ -1,23 +1,24 @@
-const fs = require('fs');
-const path = require('path');
-const { storageDir } = require('../lib/storage');
+const { getGroupConfig, setGroupConfig } = require('../lib/database');
 
 module.exports = {
   name: 'midias',
   adminOnly: true,
-  aliases: ['midiassalvas', 'midiass'],
-  async execute({ reply }) {
-    const mediaSaveDir = path.join(storageDir, 'midias_salvas');
-    if (!fs.existsSync(mediaSaveDir)) {
-      return reply('📁 Nenhuma mídia salva ainda.');
+  aliases: ['midiassalvas', 'midiass', 'midiaconfig'],
+  async execute({ groupId, args, reply }) {
+    const opcao = (args[0] || '').toLowerCase();
+    const config = getGroupConfig(groupId);
+
+    if (opcao === 'on' || opcao === 'ativo' || opcao === 'ligar') {
+      setGroupConfig(groupId, 'midiasSalvas.ativo', true);
+      return reply('✅ Salvamento automático de mídias ATIVADO.');
     }
 
-    const arquivos = fs.readdirSync(mediaSaveDir);
-    if (arquivos.length === 0) {
-      return reply('📁 Nenhuma mídia salva ainda.');
+    if (opcao === 'off' || opcao === 'desativo' || opcao === 'desligar') {
+      setGroupConfig(groupId, 'midiasSalvas.ativo', false);
+      return reply('❌ Salvamento automático de mídias DESATIVADO.');
     }
 
-    const lista = arquivos.slice(-10).map((nome, i) => `${i + 1}. ${nome}`).join('\n');
-    reply(`📁 Mídias salvas (últimas 10):\n\n${lista}\n\nTotal: ${arquivos.length} arquivos\n\nUse #vermidia <numero> para baixar uma mídia.`);
+    const status = config.midiasSalvas?.ativo ? 'ATIVADO ✅' : 'DESATIVADO ❌';
+    reply(`📁 Salvamento automático de mídias: ${status}\n\nUse #midias on para ativar\nUse #midias off para desativar\n\nComandos:\n#midias - lista mídias salvas\n#vermidia <numero> - baixa/reenvia mídia\n#limparsalvas - apaga todas as mídias`);
   }
 };

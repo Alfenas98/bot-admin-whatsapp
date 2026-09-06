@@ -356,13 +356,13 @@ async function startBot() {
     }
 
     // Salvar mídia automaticamente
-    if (
-      messageType === 'imageMessage' ||
-      messageType === 'videoMessage' ||
-      messageType === 'audioMessage' ||
-      messageType === 'stickerMessage' ||
-      messageType === 'documentMessage'
-    ) {
+    const configMidia = getGroupConfig(groupId);
+    if (configMidia.midiasSalvas.ativo &&
+      (messageType === 'imageMessage' ||
+        messageType === 'videoMessage' ||
+        messageType === 'audioMessage' ||
+        messageType === 'stickerMessage' ||
+        messageType === 'documentMessage')) {
       try {
         const caminho = await salvarMidia(msg, storageDir);
         if (caminho) {
