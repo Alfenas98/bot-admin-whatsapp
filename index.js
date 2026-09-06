@@ -358,25 +358,13 @@ async function startBot() {
     // Salvar mídia automaticamente
     const configMidia = getGroupConfig(groupId);
     if (configMidia.midiasSalvas.ativo) {
-      const tiposMidia = [
-        'imageMessage',
-        'videoMessage',
-        'audioMessage',
-        'stickerMessage',
-        'documentMessage'
-      ];
-      const temMidia = tiposMidia.some(tipo => msg.message?.[tipo] || conteudoReal[tipo]);
-      if (temMidia) {
-        try {
-          const caminho = await salvarMidia(msg, storageDir);
-          if (caminho) {
-            console.log(`[midia-salva] Arquivo salvo: ${caminho}`);
-          }
-        } catch (err) {
-          console.error('[midia-salva] Erro:', err.message);
+      try {
+        const caminho = await salvarMidia(msg, storageDir);
+        if (caminho) {
+          console.log(`[midia-salva] Arquivo salvo: ${caminho}`);
         }
-      } else if (messageType !== 'conversation' && messageType !== 'extendedTextMessage') {
-        console.log(`[midia-salva] Ignorado tipo sem mídia: ${messageType}`);
+      } catch (err) {
+        console.error('[midia-salva] Erro:', err.message);
       }
     }
 
