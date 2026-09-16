@@ -64,11 +64,21 @@ module.exports = {
       
       return reply(`🤖 *Resposta da IA:*\n\n${respostaLimitada}`);
     } catch (err) {
-      console.error('[pergunta] Erro:', err.message);
+      console.error('[pergunta] Erro completo:', err);
+      console.error('[pergunta] Status:', err.response?.status);
+      console.error('[pergunta] Data:', err.response?.data);
+      console.error('[pergunta] Key existe?', !!process.env.GEMINI_API_KEY);
+      console.error('[pergunta] Key valor:', process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 10) + '...' : 'N/A');
       if (err.response?.status === 429) {
         return reply('⚠️ Muitas requisições para a IA. Aguarde um momento.');
       }
-      return reply('⚠️ Erro ao processar pergunta. Tente novamente mais tarde.');
+      if (err.response?.status === 400) {
+        return reply('⚠️ Erro na requisição: ' + (err.response?.data?.error?.message || 'Dados inválidos'));
+      }
+      if (err.response?.status === 403) {
+        return reply('⚠️ Key inválida ou sem permissão. Verifique GEMINI_API_KEY no Railway.');
+      }
+      return reply('⚠️ Erro ao processar pergunta: ' + (err.message || 'Erro desconhecido'));
     }
   }
 };
