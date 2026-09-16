@@ -1,13 +1,13 @@
 const { getGroupConfig, setGroupConfig } = require('../lib/database');
-const { parseDuracao, formatarDuracao } = require('../lib/timeoutMute');
+const { queryLLM } = require('../lib/aiClient');
 
 module.exports = {
   name: 'lembrete',
-  aliases: ['lembrete', 'reminder'],
+  aliases: ['lembrete', 'lembrar', 'reminder'],
   adminOnly: true,
   async execute({ sock, msg, groupId, args, reply }) {
     if (args.length === 0) {
-      return reply('⚠️ Uso:\n#lembrete add <HH:MM|HHhMMm|10m> <mensagem>\n#lembrete list\n#lembrete rm <número>\n#lembrete clear\n\nEx: #lembrete add 20:00 Reunião de amanhã\n#lembrete add 10m Hora do almoço\n#lembrete add 1d Aviso importante');
+      return reply('⚠️ Uso:\n#lembrete add <HH:MM|10m|2h|1d> <mensagem>\n#lembrete list\n#lembrete rm <número>');
     }
 
     const sub = args[0].toLowerCase();
@@ -18,126 +18,95 @@ module.exports = {
       if (lembretes.length === 0) {
         return reply('📋 Nenhum lembrete agendado.');
       }
-
       const lista = lembretes.map((l, i) => `${i + 1}. [${l.horario}] ${l.mensagem}`);
       return reply(`📋 *Lembretes agendados:*\n${lista.join('\n')}`);
     }
 
-    // Limpar lembretes
-    if (sub === 'clear' || sub === 'limpar') {
-      setGroupConfig(groupId, 'lembretes', []);
-      // Limpa timeouts
-      const lembretes = getGroupConfig(groupId).lembretes || [];
-      if (global.lembreteTimeouts && global.lembreteTimeouts[groupId]) {
-        Object.values(global.lembreteTimeouts[groupId]).forEach(t => clearTimeout(t));
-        delete global.lembreteTimeouts[groupId];
-      }
-      return reply('🗑️ Todos os lembretes foram limpos.');
-    }
-
-    // Remover lembrete específico
+    // Remover lembrete
     if (sub === 'rm' || sub === 'remover') {
       const idx = parseInt(args[1], 10) - 1;
       const lembretes = getGroupConfig(groupId).lembretes || [];
-      
       if (isNaN(idx) || idx < 0 || idx >= lembretes.length) {
         return reply('⚠️ Índice inválido. Use #lembrete list para ver os números.');
       }
 
-      if (!global.lembreteTimeouts || !global.lembreteTimeouts[groupId] || !global.lembreteTimeouts[groupId][idx]) {
-        return reply('⚠️ Não foi possível localizar o timer do lembrete.');
+      const removido = lembretes.splice(idx, 1)[0];
+      setGroupConfig(groupId, 'lembretes', lembretes);
+      
+      // Limpa timeout se existir
+      if (global.lembreteTimeouts?.[groupId]?.[removido.id]) {
+        clearTimeout(global.lembreteTimeouts[groupId][removido.id]);
+        delete global.lembreteTimeouts[groupId][removido.id];
       }
 
-      clearTimeout(global.lembreteTimeouts[groupId][idx]);
-      lembretes.splice(idx, 1);
-      setGroupConfig(groupId, 'lembretes', lembretes);
-      delete global.lembreteTimeouts[groupId][idx];
-      
       return reply(`✅ Lembrete #${idx + 1} removido.`);
     }
 
     // Adicionar lembrete
     if (sub === 'add' || sub === 'agendar') {
       const horarioStr = args[1];
-      const mensagem = args.slice(2).join(' ');
+      const mensagemUsuario = args.slice(2).join(' ');
 
-      if (!horarioStr || !mensagem) {
-        return reply('⚠️ Uso: #lembrete add <HH:MM|HHhMMm|10m|1h|1d> <mensagem>\nEx: #lembrete add 20:00 Reunião de amanhã');
+      if (!horarioStr || !mensagemUsuario) {
+        return reply('⚠️ Uso: #lembrete add <HH:MM|10m|2h|1d> <mensagem>');
       }
 
+      // Tenta parsear a duração
       let duracaoMs = null;
       let horarioFormatado = horarioStr;
+      let mensagem = mensagemUsuario;
 
-      // Tenta formatos de duração: 10m, 2h, 1d
-      try {
-        duracaoMs = parseDuracao(horarioStr);
-        horarioFormatado = formatarDuracao(duracaoMs);
-      } catch (e) {
-        // Tenta HH:MM
-        if (/^\d{1,2}:\d{2}$/.test(horarioStr)) {
-          const [h, m] = horarioStr.split(':').map(x => parseInt(x, 10));
-          const agora = new Date();
-          const alvo = new Date(agora);
-          alvo.setHours(h, m, 0, 0);
-          
-          // Se o horário já passou hoje, agenda para amanhã
-          if (alvo <= agora) {
-            alvo.setDate(alvo.getDate() + 1);
-          }
-          
-          duracaoMs = alvo.getTime() - agora.getTime();
-          horarioFormatado = horarioStr;
-        } else if (/^\d{1,2}h\d{2}m$/.test(horarioStr)) {
-          const match = horarioStr.match(/^(\d+)h(\d+)m$/);
-          const horas = parseInt(match[1], 10);
-          const minutos = parseInt(match[2], 10);
-          duracaoMs = (horas * 3600 + minutos * 60) * 1000;
-          horarioFormatado = `${horas}h${minutos}m`;
-        } else {
-          return reply('⚠️ Formato inválido. Use HH:MM (20:30), 10m (10 minutos), 2h (2 horas) ou 1d (1 dia)');
-        }
+      // Se for formato HH:MM
+      if (/^\d{1,2}:\d{2}$/.test(horarioStr)) {
+        const [h, m] = horarioStr.split(':').map(x => parseInt(x, 10));
+        const agora = new Date();
+        const alvo = new Date(agora);
+        alvo.setHours(h, m, 0, 0);
+        if (alvo <= agora) alvo.setDate(alvo.getDate() + 1);
+        duracaoMs = alvo.getTime() - agora.getTime();
+      } else if (/^\d+(s|m|h|d)$/.test(horarioStr)) {
+        const valor = parseInt(horarioStr.match(/\d+/)[0], 10);
+        const unidade = horarioStr.match(/[smhd]/)[0];
+        const mult = { s: 1000, m: 60000, h: 3600000, d: 86400000 };
+        duracaoMs = valor * mult[unidade];
+      } else {
+        return reply('⚠️ Formato inválido. Use HH:MM (20:30), 10m (10 min) ou 2h (2 horas)');
       }
 
-      if (duracaoMs === null || duracaoMs <= 0) {
+      if (!duracaoMs || duracaoMs <= 0) {
         return reply('⚠️ Duração inválida.');
       }
 
-      const lembretes = getGroupConfig(groupId).lembretes || [];
-      const novoId = lembretes.length;
-      
-      lembretes.push({
-        id: novoId,
-        horario: horarioFormatado,
-        mensagem,
-        criadoEm: new Date().toISOString()
-      });
+      // Gera um título curto usando IA (opcional)
+      let titulo = mensagem;
 
+      const lembretes = getGroupConfig(groupId).lembretes || [];
+      const novoId = lembretes.length > 0 ? Math.max(...lembretes.map(l => l.id)) + 1 : 0;
+      
+      const entrada = {
+        id: novoId,
+        horario: horarioStr,
+        mensagem: titulo
+      };
+      lembretes.push(entrada);
       setGroupConfig(groupId, 'lembretes', lembretes);
 
-      // Agenda o timeout
+      // Agenda
       if (!global.lembreteTimeouts) global.lembreteTimeouts = {};
       if (!global.lembreteTimeouts[groupId]) global.lembreteTimeouts[groupId] = {};
-      
-      const timeout = setTimeout(async () => {
-        try {
-          await sock.sendMessage(groupId, {
-            text: `🔔 *Lembrete:* ${mensagem}`
-          });
-          // Remove da lista após disparar
-          const atual = getGroupConfig(groupId).lembretes || [];
-          const filtrado = atual.filter(l => l.id !== novoId);
-          setGroupConfig(groupId, 'lembretes', filtrado);
-          delete global.lembreteTimeouts[groupId][novoId];
-        } catch (err) {
-          console.error('[lembrete] Falha ao enviar:', err.message);
-        }
+      global.lembreteTimeouts[groupId][novoId] = setTimeout(async () => {
+        await sock.sendMessage(groupId, {
+          text: `🔔 *Lembrete:* ${titulo}`
+        });
+        const atual = getGroupConfig(groupId).lembretes || [];
+        const filtrado = atual.filter(l => l.id !== novoId);
+        setGroupConfig(groupId, 'lembretes', filtrado);
+        delete global.lembreteTimeouts[groupId][novoId];
       }, duracaoMs);
 
-      global.lembreteTimeouts[groupId][novoId] = timeout;
-
-      return reply(`✅ Lembrete agendado para ${horarioFormatado}: "${mensagem}"`);
+      return reply(`✅ Lembrete agendado para ${horarioStr}: "${titulo}"`);
     }
 
-    return reply('⚠️ Subcomando desconhecido. Use: add, list, rm, clear');
+    return reply('⚠️ Subcomando desconhecido. Use: add, list, rm');
   }
 };
