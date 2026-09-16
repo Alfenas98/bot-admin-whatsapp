@@ -44,7 +44,7 @@ module.exports = {
       setGroupConfig(groupId, 'muted', muted);
     }
 
-    // Resolve o nome real do usuário (try group metadata first — faster)
+    // Resolve o nome real do usuário (try group metadata first — fastest)
     let nomeExibicao = '@' + numero;
     try {
       const metadata = await sock.groupMetadata(groupId);
@@ -53,15 +53,15 @@ module.exports = {
         nomeExibicao = participante.profile;
       }
     } catch (err) {
-      // Fallback para fetchStatus
+      // Fallback: tenta resolver via onWhatsApp
     }
     
-    // Se ainda não resolveu, tenta via fetchStatus
+    // Se ainda não resolveu, tenta onWhatsApp
     if (nomeExibicao === '@' + numero) {
       try {
-        const status = await sock.fetchStatus(alvo);
-        if (status && status.name) {
-          nomeExibicao = status.name;
+        const whatsAppInfo = await sock.onWhatsApp(alvo);
+        if (whatsAppInfo && whatsAppInfo.name) {
+          nomeExibicao = whatsAppInfo.name;
         }
       } catch (e) {
         // Mantém o fallback
