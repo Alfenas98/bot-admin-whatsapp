@@ -181,6 +181,28 @@ Jogos incluídos: **Eu Nunca**, **Eu Nunca +18**, **Verdade ou Desafio**, **Qual
 - `#saida on|off|mensagem <texto>`
 - `#menu` e `#menu <categoria>`
 
+### 💬 Citações e Lembretes
+- `#quote save "texto"` ou responda uma mensagem e use `#quote save`
+- `#quote list` — Lista todas as citações
+- `#quote get <número>` — Pega citação específica
+- `#quote random` — Citação aleatória
+- `#quote clear` — Limpa todas as citações
+
+### 🎁 Sorteios
+- `#sorteia <segundos> <prêmio>` — Inicia sorteio
+- `#sorteia cancelar` — Cancela sorteio ativo
+- Participantes são coletados automaticamente
+
+### 🔔 Lembretes
+- `#lembrete add <HH:MM|10m|2h|1d> <mensagem>`
+- `#lembrete list` — Lista lembretes ativos
+- `#lembrete rm <número>` — Remove lembrete específico
+- `#lembrete clear` — Limpa todos os lembretes
+
+### 📊 Relatório
+- `#relatorio` — Relatório geral do grupo
+- `#relatorio top` — Top 10 membros ativos
+
 ---
 
 ## Configurações avançadas

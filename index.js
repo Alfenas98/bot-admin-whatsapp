@@ -338,6 +338,16 @@ async function startBot() {
       return;
     }
 
+    // Coleta participantes para sorteio ativo
+    const sorteioConfig = getGroupConfig(groupId);
+    if (sorteioConfig.sorteioAtivo && !msg.key.fromMe) {
+      const participantes = sorteioConfig.sorteioParticipantes || [];
+      if (!participantes.includes(senderId)) {
+        participantes.push(senderId);
+        setGroupConfig(groupId, 'sorteioParticipantes', participantes);
+      }
+    }
+
     if (config.levelSystem) {
       const resultado = adicionarXP(groupId, senderId, 5);
       if (resultado.subiuNivel) {
