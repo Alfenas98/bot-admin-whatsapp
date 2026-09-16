@@ -4,65 +4,246 @@ function status(v) {
   return v ? '✅' : '❌';
 }
 
+function statusOnOff(v) {
+  return v ? '🟢 LIGADO' : '🔴 DESLIGADO';
+}
+
 const CATEGORIAS = {
-  seguranca: `*🔐 Segurança*\n#antilink | #antilinkhard | #antifake | #ddi <código>\n#antipalavrao | #palavrao add|remover|lista\n#antienquete | #anticontato | #x9 | #anticlone\n#antiimagem | #antivideo | #antiaudio | #antisticker | #antidocumento\n#antifloodfigurinha on|off|limite|tempo\n#antispamrepetido on|off|limite\n#antimarcacaomassa on|off|limite\n#limitecaracteres on|off|<número>\n#whitelist add|remover <numero>`, 
+  seguranca: `
+╭───────────────╮
+│ 🔐 *SEGURANÇA* │
+╰───────────────╯
+├─ Anti-Link
+│  #antilink on/off     → Links de convite
+│  #antilinkhard on/off → Todos os links
+│  #whitelist add/remover <num> → Exceções
+├─ Anti-Fake
+│  #antifake on/off     → Bloqueia DDI estrangeiro
+│  #ddi <código>        → Ex: #ddi 55
+├─ Anti-Spam
+│  #antipalavrao on/off → Filtra palavrões
+│  #palavrao add <palavra>
+│  #antifloodfigurinha on/off
+│  #antispamrepetido on/off
+│  #antimarcacaomassa on/off
+├─ Anti-Mídia
+│  #antiimagem on/off
+│  #antivideo on/off
+│  #antiaudio on/off
+│  #antisticker on/off
+│  #antidocumento on/off
+├─ Outros
+│  #antienquete on/off
+│  #anticontato on/off
+│  #anticlone on/off
+│  #x9 on/off           → Dedurar admins
+│  #limitecaracteres on/off <num>
+╚═`,
 
-  admin: `*🛡️ Administração*\n#soadm on|off\n#ban @user | #promover @user | #rebaixar @user\n#fechar | #abrir\n#apagar (responda a mensagem)\n#prefixo add|remover <símbolo>\n#inatividade on|off|dias <número>\n#inativos [remover]\n#warn @user | #warns @user | #resetwarn @user | #warnsystem limite <n>\n#linkgrupo\n#backup\n#apenasadmin on|off (só admins podem usar QUALQUER comando)\n#agendamento mensagem|backup|resumo|sorteio|lembrete|listar|remover\n#auditoria on|off|destino <numero>\n#alertagrupo on|off\n#broadcast <mensagem> | origem on|off | receber on|off\n#sync definirmodelo | aplicar`,
+  admin: `
+╭─────────────────╮
+│ 🛡️ *ADMINISTRAÇÃO* │
+╰─────────────────╯
+├─ Grupo
+│  #abrir / #fechar    → Abrir/fechar grupo
+│  #apagar             → Apagar msg (responder)
+│  #soadm on/off       → Só admins falaram
+│  #apenasadmin on/off → Só admins comandos
+├─ Membros
+│  #ban @user          → Banir membro
+│  #promover @user     → Promover a admin
+│  #rebaixar @user     → Rebaixar admin
+│  #warn @user         → Advertir
+│  #warns @user        → Ver advertências
+│  #resetwarn @user    → Zerar advertências
+│  #warnsystem limite <n>
+├─ Mute
+│  #mutar @user [tempo]   → Mutar membro
+│  #desmutar @user        → Desmutar
+├─ Prefixo
+│  #prefixo add/remover <símbolo>
+├─ Inatividade
+│  #inatividade on/off|dias <n>
+│  #inativos [remover]    → Remover inativos
+├─ Mensagens
+│  #boasvindas on/off|mensagem <texto>
+│  #saida on/off|mensagem <texto>
+├─ Agendamento
+│  #agendamento mensagem|backup|resumo|sorteio|lembrete
+│  #agendamento listar|remover
+├─ Extras
+│  #linkgrupo           → Link do grupo
+│  #backup              → Backup dos dados
+│  #auditoria on/off|destino <num>
+│  #alertagrupo on/off  → Alertas de mudança
+│  #broadcast <mensagem> → Enviar para outros grupos
+╚═`,
 
-  engajamento: `*⭐ Engajamento*\n#levelsystem on|off\n#level (vê seu progresso)\n#top10 (ranking do grupo)\n#rankdiario (ranking só de hoje, reseta à meia-noite)\n#autosticker on|off\n#autoresposta on|off|add|remover|lista\n#zoeiranovato on|off|frase add|listar|remover|limpar (zoa homens na apresentação, por nome)\n#namorar @user (propõe) | #aceitar | #terminar | #casal [@user]\n#casar @user (pede casamento pra quem já namora)\n#enquete Pergunta | Opção 1 | Opção 2\n#sorteio <segundos> <prêmio>\n#jogos (lista jogos disponíveis)\n#jogo <número>\n#jogos addfigurinha <número> (envie com uma figurinha)\n#pararjogo`,
+  engajamento: `
+╭──────────────────╮
+│ ⭐ *ENGAJAMENTO*   │
+╰──────────────────╯
+├─ Level/XP
+│  #levelsystem on/off → Ativar sistema de XP
+│  #level                → Ver seu progresso
+│  #top10                → Ranking do grupo
+│  #rankdiario           → Ranking de hoje
+│  #rankia               → Análise IA do ranking 🤖
+├─ Auto
+│  #autosticker on/off  → Figurinha automática
+│  #autoresposta on/off → Respostas automáticas
+│  #zoeiranovato on/off  → Zoar novatos
+├─ Namoro/Casamento
+│  #namorar @user       → Propor namoro
+│  #aceitar             → Aceitar proposta
+│  #terminar            → Terminar namoro
+│  #casal               → Ver seu casal
+│  #casar @user         → Pedir em casamento
+├─ Diversão
+│  #enquete Pergunta | Opção 1 | Opção 2
+│  #sorteio <segundos> <prêmio>
+├─ Jogos
+│  #jogos               → Lista de jogos
+│  #jogo <número>       → Iniciar jogo
+│  #jogos addfigurinha <número> → Add figurinha
+│  #pararjogo           → Parar jogo
+╚═`,
 
-  inteligencia: `*🤖 Inteligência Artificial*\n#ai <pergunta>\n#resumir <texto>\n#traduzir pt|en "texto"\n#sentimento <texto>\n#topicos <texto>\n#code "requisição"`,
+  jogos: `
+╭─────────────╮
+│ 🎮 *JOGOS*  │
+╰─────────────╯
+├─ Eu Nunca
+│  #jogo 1 → "Eu Nunca..."
+│  #jogo 2 → "Eu Nunca +18"
+├─ Outros
+│  #jogo 3 → Verdade ou Desafio
+│  #jogo 4 → Verdade ou Desafio +18
+│  #jogo 5 → Qual Foi?
+│  #jogo 6 → Enquete Polêmica
+├─ Comandos
+│  #px                 → Pular pergunta
+│  #pararjogo          → Parar jogo
+│  #jogos addfigurinha → Add figurinha
+╚═`,
 
-  geral: `*⚙️ Geral*\n#boasvindas on|off|mensagem <texto>\n#saida on|off|mensagem <texto>\n#ativarpadrao (liga x9, antidocumento, anticlone, boasvindas, saida de uma vez)\n#menu (este painel)`
+  inteligencia: `
+╭────────────────────╮
+│ 🤖 *INTELIGÊNCIA IA* │
+╰────────────────────╯
+├─ Consultas
+│  #pergunta <texto>   → Perguntar à IA
+│  #rankia             → Análise IA do ranking
+├─ Texto
+│  #traduzir <texto>   → Traduzir qualquer idioma
+├─ Diversão
+│  #piada              → Piadas aleatórias
+│  #historia           → História com membros
+│  #conselho <tema>    → Conselhos
+│  #dica               → Dica do dia
+├─ Análise
+│  #humor              → Análise de humor do grupo
+│  #analise            → Diagnóstico do grupo
+│  #sugestiao          → Sugestões de enquetes
+├─ Utilidades
+│  #resumo             → Resumo das mensagens
+│  #membros            → Estatísticas do grupo
+╚═`,
+
+  anonimo: `
+╭─────────────────╮
+│ 📬 *CAIXA ANÔNIMA* │
+╰─────────────────╯
+├─ Admin
+│  #caixaanon on/off  → Ativar/desativar
+│  #limparanon        → Limpar histórico
+├─ Membros
+│  #anomsg <mensagem> → Enviar mensagem anônima
+├─ Consulta (Admin)
+│  #histanon [qtd]    → Ver histórico
+│  #responderanon <n> <resposta>
+│  #relatorioanon     → Estatísticas
+╚═`,
+
+  utilidades: `
+╭─────────────────╮
+│ 🔧 *UTILIDADES*  │
+╰─────────────────╯
+├─ Clima
+│  #clima <cidade>    → Previsão do tempo
+│  Cidades: SP, RJ, BH, Curitiba, etc
+├─ Economia
+│  #cotacao <moeda>   → Cotação
+│  USD, EUR, BTC, ETH, etc
+├─ Grupo
+│  #id                → ID do grupo
+│  #ping               → Latência
+│  #infogrupo         → Informações
+├─ Outros
+│  #ativarpadrao       → Ativar recursos padrão
+│  #menu               → Este menu
+╚═`
 };
 
 module.exports = {
   name: 'menu',
-  aliases: ['status', 'painel'],
+  aliases: ['help', 'ajuda', 'comandos'],
   adminOnly: false,
+
   async execute({ groupId, args, reply }) {
     const categoria = (args[0] || '').toLowerCase();
-    if (CATEGORIAS[categoria]) return reply(CATEGORIAS[categoria]);
+    
+    if (CATEGORIAS[categoria]) {
+      return reply(CATEGORIAS[categoria].trim());
+    }
 
     const c = getGroupConfig(groupId);
 
     const texto = `
-╭─〔 *STATUS DO BOT* 〕
-│ 🔗 antilink (convite): ${status(c.antilink)}
-│ 🧱 antilinkhard (todo link): ${status(c.antilinkhard)}
-│ 🧩 antifake: ${status(c.antifake)}
-│ 🤬 antipalavrao: ${status(c.antipalavrao)}
-│ 📊 antienquete: ${status(c.antienquete)}
-│ 👤 anticontato: ${status(c.anticontato)}
-│ 👀 x9: ${status(c.x9)}
-│ 🧬 anticlone: ${status(c.anticlone)}
-│ 🛡️ soadm: ${status(c.soAdmin)}
-│ 🕰️ inatividade: ${status(c.inatividade.ativo)}
-│ 🔒 apenasadmin: ${status(c.apenasAdminUsaComandos)}
-│ 🖼️ antiimagem: ${status(c.antimidia.imagem)}
-│ 📹 antivideo: ${status(c.antimidia.video)}
-│ 🎧 antiaudio: ${status(c.antimidia.audio)}
-│ 🧩 antisticker: ${status(c.antimidia.sticker)}
-│ 📄 antidocumento: ${status(c.antimidia.documento)}
-│ 📢 antifloodfigurinha: ${status(c.antifloodFigurinha.ativo)}
-│ 🔁 antispamrepetido: ${status(c.antispamRepetido.ativo)}
-│ 📛 antimarcacaomassa: ${status(c.antimarcacaomassa.ativo)}
-│ 🔢 limitecaracteres: ${status(c.limiteCaracteres.ativo)}
-│ 🤳 boasvindas: ${status(c.boasvindas.ativo)}
-│ 👋 saida: ${status(c.saida.ativo)}
-│ ⭐ levelsystem: ${status(c.levelSystem)}
-│ 🖼️➡️🧩 autosticker: ${status(c.autosticker)}
-│ 💬 autoresposta: ${status(c.autoresposta.ativo)}
-╰────────────
+╭─────────────────────────────────╮
+│   🤖 *BOT ADMINISTRADOR v2.0*    │
+╰─────────────────────────────────╯
 
-*Categorias de comando:*
-#menu seguranca
-#menu admin
-#menu engajamento
-#menu inteligencia
-#menu geral
+╭─ *📊 STATUS DO GRUPO* ─╮
+│ 🔗 Anti-Link: ${statusOnOff(c.antilink)}
+│ 🧱 Anti-Link Hard: ${statusOnOff(c.antilinkhard)}
+│ 🧩 Anti-Fake: ${statusOnOff(c.antifake)}
+│ 🤬 Anti-Palavrão: ${statusOnOff(c.antipalavrao)}
+│ 🖼️ Anti-Imagem: ${statusOnOff(c.antimidia.imagem)}
+│ 📹 Anti-Vídeo: ${statusOnOff(c.antimidia.video)}
+│ 🎧 Anti-Áudio: ${statusOnOff(c.antimidia.audio)}
+│ 🧩 Anti-Sticker: ${statusOnOff(c.antimidia.sticker)}
+│ 📄 Anti-Doc: ${statusOnOff(c.antimidia.documento)}
+│ 📢 Anti-Flood Fig: ${statusOnOff(c.antifloodFigurinha.ativo)}
+│ 🔁 Anti-Spam: ${statusOnOff(c.antispamRepetido.ativo)}
+│ 👋 Boas-vindas: ${statusOnOff(c.boasvindas.ativo)}
+│ ⭐ Level: ${statusOnOff(c.levelSystem)}
+╰─────────────────────────╯
 
-Apenas admins do grupo podem usar comandos de configuração.
+╭─ *📂 CATEGORIAS* ─╮
+│ 
+│  🔐 #menu seguranca
+│  🛡️ #menu admin
+│  ⭐ #menu engajamento
+│  🎮 #menu jogos
+│  🤖 #menu inteligencia
+│  📬 #menu anonimo
+│  🔧 #menu utilidades
+│
+╰─────────────────╯
+
+╭─ *💡 COMANDOS POPULARES* ─╮
+│ 
+│  #jogo 1           → Eu Nunca
+│  #sorteio 60s Prêmio  → Sorteio
+│  #clima São Paulo  → Clima
+│  #cotacao USD      → Cotação
+│  #pergunta texto   → Perguntar à IA
+│  #traduzir texto   → Traduzir
+│  #anomsg mensagem  → Msg anônima
+│  #px               → Pular pergunta
+│ 
+╰───────────────────────────╯
     `.trim();
 
     return reply(texto);
