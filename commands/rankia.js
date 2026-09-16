@@ -51,18 +51,17 @@ module.exports = {
 
       // Top 5 com nomes reais e menções
       const mencoes = [];
-      const top5 = listaUsuarios.slice(0, 5)
-        .map(([id, dados], i) => {
-          const nomeReal = participantesMap[id] || participantesMap[id.replace('@s.whatsapp.net', '')] || id.split('@')[0];
-          // Adicionar ID para menção (formato WhatsApp)
-          const idMencao = id.includes('@') ? id : `${id}@s.whatsapp.net`;
-          mencoes.push(idMencao);
-          return `${i + 1}. @${idMencao.split('@')[0]} - Nível ${dados.nivel || 1} (${dados.mensagens || 0} msgs)`;
-        })
-        .join('\n');
+      const top5Data = listaUsuarios.slice(0, 5).map(([id, dados], i) => {
+        const nomeReal = participantesMap[id] || participantesMap[id.replace('@s.whatsapp.net', '')] || id.split('@')[0];
+        const numeroWhatsapp = id.replace('@s.whatsapp.net', '');
+        mencoes.push(id.includes('@') ? id : `${id}@s.whatsapp.net`);
+        return { nome: nomeReal, nivel: dados.nivel || 1, msgs: dados.mensagens || 0, numero: numeroWhatsapp };
+      });
+
+      const top5 = top5Data.map((u, i) => `${i + 1}. ${u.nome} - Nível ${u.nivel} (${u.msgs} msgs)`).join('\n');
 
       // Membros ativos vs inativos
-      const membrosAtivos = listaUsuarios.length;
+      const membrosAtivos = top5Data.length;
       const membrosInativos = totalParticipantes - membrosAtivos;
 
       // Montar prompt para a IA com dados precisos
@@ -78,11 +77,12 @@ module.exports = {
 ${top5}
 
 IMPORTANTE: Use EXATAMENTE os números acima. NÃO invente números.
+CRÍTICO: NÃO inclua IDs de usuário (números como @123456789) na resposta. Use APENAS os nomes dos membros.
 
 Forneça:
 1. Uma análise de 2-3 frases sobre a atividade do grupo
 2. Uma sugestão prática para melhorar o engajamento
-3. Um "membro destaque" do ranking com um elogio criativo
+3. Um "membro destaque" do ranking usando APENAS o nome (ex: "Destaque para João!") com um elogio criativo
 
 Responda em Português-BR, de forma leve e divertida. Use emojis.`;
 
@@ -99,9 +99,9 @@ Responda em Português-BR, de forma leve e divertida. Use emojis.`;
         return reply('⚠️ A IA não conseguiu analisar o ranking. Tente novamente.');
       }
 
-      // Enviar com menções
+      // Enviar com menções (apenas dos tops, a IA não deve incluir IDs)
       const textoFinal = `🤖 *Análise IA do Ranking*\n\n${resposta}`;
-      
+
       return await sock.sendMessage(groupId, {
         text: textoFinal,
         mentions: mencoes
