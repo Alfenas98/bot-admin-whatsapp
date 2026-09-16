@@ -44,21 +44,26 @@ module.exports = {
       setGroupConfig(groupId, 'muted', muted);
     }
 
-    // Resolve o nome real do usuário
+    // Resolve o nome real do usuário (try group metadata first — faster)
     let nomeExibicao = '@' + numero;
     try {
-      const profile = await sock.getAboutMessage(alvo);
-      if (profile && profile.name) {
-        nomeExibicao = profile.name;
+      const metadata = await sock.groupMetadata(groupId);
+      const participante = metadata.participants?.find(p => p.id === alvo);
+      if (participante?.profile) {
+        nomeExibicao = participante.profile;
       }
-    } catch (e) {
+    } catch (err) {
+      // Fallback para fetchStatus
+    }
+    
+    // Se ainda não resolveu, tenta via fetchStatus
+    if (nomeExibicao === '@' + numero) {
       try {
-        const metadata = await sock.groupMetadata(groupId);
-        const participante = metadata.participants?.find(p => p.id === alvo);
-        if (participante?.profile) {
-          nomeExibicao = participante.profile;
+        const status = await sock.fetchStatus(alvo);
+        if (status && status.name) {
+          nomeExibicao = status.name;
         }
-      } catch (err) {
+      } catch (e) {
         // Mantém o fallback
       }
     }
