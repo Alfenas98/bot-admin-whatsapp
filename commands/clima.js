@@ -1,6 +1,11 @@
 const axios = require('axios');
 
-// Cache de localizações para coordenadas
+// Cache de coordenadas (evita buscar na API toda hora)
+const coordsCache = new Map();
+const climaCache = new Map();
+const CACHE_DURATION_MS = 30 * 60 * 1000; // 30 minutos
+
+// Cidades pré-configuradas (resposta instantânea)
 const coordenadasCache = {
   'são paulo': { lat: -23.5505, lon: -46.6333, nome: 'São Paulo, SP' },
   'rio de janeiro': { lat: -22.9068, lon: -43.1729, nome: 'Rio de Janeiro, RJ' },
@@ -33,7 +38,6 @@ const coordenadasCache = {
 // Mapear condições climáticas por código WMO
 function traduzirCondicao(codigo) {
   const cod = Number(codigo);
-  
   if (cod === 0) return { emoji: '☀️', desc: 'Céu limpo' };
   if (cod === 1) return { emoji: '🌤️', desc: 'Principalmente claro' };
   if (cod === 2) return { emoji: '⛅', desc: 'Parcialmente nublado' };
@@ -49,8 +53,59 @@ function traduzirCondicao(codigo) {
   if (cod === 85 || cod === 86) return { emoji: '❄️', desc: 'Neve isolada' };
   if (cod === 95) return { emoji: '⛈️', desc: 'Tempestade' };
   if (cod === 96 || cod === 99) return { emoji: '⛈️', desc: 'Tempestade com granizo' };
-  
   return { emoji: '🌡️', desc: 'Indisponível' };
+}
+
+// Verificar se é CEP (formato 00000-000 ou 00000000)
+function ehCEP(texto) {
+  return /^\d{5}-?\d{3}$/.test(texto.trim());
+}
+
+// Buscar coordenadas via Nominatim (OpenStreetMap) - GRATUITO
+async function buscarCoordenadas(query) {
+  // Verificar cache primeiro
+  const cacheKey = query.toLowerCase();
+  if (coordsCache.has(cacheKey)) {
+    const cached = coordsCache.get(cacheKey);
+    if (Date.now() - cached.timestamp < CACHE_DURATION_MS) {
+      return cached.data;
+    }
+  }
+
+  try {
+    // Tentar CEP primeiro (via Nominatim com country=Brasil)
+    let url;
+    if (ehCEP(query)) {
+      url = `https://nominatim.openstreetmap.org/search?format=json&q=${query}&countrycodes=br&limit=1`;
+    } else {
+      url = `https://nominatim.openstreetmap.org/search?format=json&q=${query},Brasil&countrycodes=br&limit=1`;
+    }
+
+    const res = await axios.get(url, {
+      timeout: 10000,
+      headers: { 'User-Agent': 'WhatsAppGroupBot/1.0' }
+    });
+
+    if (res.data && res.data.length > 0) {
+      const resultado = {
+        lat: parseFloat(res.data[0].lat),
+        lon: parseFloat(res.data[0].lon),
+        nome: res.data[0].display_name?.split(',')[0] || query
+      };
+
+      // Salvar no cache
+      coordsCache.set(cacheKey, { data: resultado, timestamp: Date.now() });
+
+      // Rate limit do Nominatim (1 req/seg)
+      await new Promise(resolve => setTimeout(resolve, 1100));
+
+      return resultado;
+    }
+  } catch (err) {
+    console.error('[clima] Erro Nominatim:', err.message);
+  }
+
+  return null;
 }
 
 module.exports = {
@@ -59,85 +114,124 @@ module.exports = {
   adminOnly: false,
 
   async execute({ sock, groupId, msg, reply, args }) {
-    let cidade = args.join(' ');
-    
-    if (!cidade) {
-      return reply('⚠️ Use: #clima <cidade>\nExemplo: #clima São Paulo\n\nCidades disponíveis:\n' + 
-        Object.values(coordenadasCache).map(c => c.nome.split(',')[0]).join(', '));
+    if (!args || args.length === 0) {
+      return reply('⚠️ Use: #clima <cidade ou CEP>\n\nExemplos:\n#clima São Paulo\n#clima 01001-000\n#clima Rio de Janeiro\n\nAliases: #previsao, #tempo');
     }
 
-    // Normalizar nome da cidade
-    const cidadeLower = cidade.toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  
-    // Buscar coordenadas
-    let coords = null;
-    let nomeCidade = '';
-  
-    for (const [chave, valor] of Object.entries(coordenadasCache)) {
-      const chaveLower = chave.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      if (cidadeLower.includes(chaveLower) || chaveLower.includes(cidadeLower)) {
-        coords = { lat: valor.lat, lon: valor.lon };
-        nomeCidade = valor.nome;
-        break;
+    const query = args.join(' ');
+    const cidadeLower = query.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+    // Verificar se é CEP e obter nome amigável
+    let nomeAmigavel = query;
+    if (ehCEP(query)) {
+      try {
+        const urlCep = `https://viacep.com.br/ws/${query.replace('-', '')}/json/`;
+        const resCep = await axios.get(urlCep, { timeout: 10000 });
+        if (resCep.data && !resCep.data.erro) {
+          nomeAmigavel = `${resCep.data.localidade}, ${resCep.data.uf}`;
+        }
+      } catch (e) {}
+    }
+
+    // Verificar cache de clima
+    const climaCacheKey = cidadeLower;
+    if (climaCache.has(climaCacheKey)) {
+      const cached = climaCache.get(climaCacheKey);
+      if (Date.now() - cached.timestamp < CACHE_DURATION_MS) {
+        return reply(cached.data);
       }
-    }
-
-    if (!coords) {
-      return reply(`⚠️ Cidade "${cidade}" não encontrada.\n\nCidades disponíveis:\n` + 
-        Object.values(coordenadasCache).map(c => c.nome.split(',')[0]).join(', '));
     }
 
     try {
-      // Buscar dados do Open-Meteo
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}&current_weather=true&hourly=temperature_2m,relativehumidity_2m,precipitation_probability,weathercode&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_sum,weathercode&timezone=America%2FSao_Paulo&forecast_days=3`;
-      
-      const res = await axios.get(url, { timeout: 10000 });
+      // Buscar coordenadas
+      let coords = null;
+
+      // 1. Verificar cidades pré-configuradas
+      for (const [chave, valor] of Object.entries(coordenadasCache)) {
+        const chaveLower = chave.normalize('NFD').replace(/[̀-ͯ]/g, '');
+        if (cidadeLower.includes(chaveLower) || chaveLower.includes(cidadeLower)) {
+          coords = valor;
+          break;
+        }
+      }
+
+      // 2. Se não encontrou, buscar via Nominatim
+      if (!coords) {
+        coords = await buscarCoordenadas(query);
+      }
+
+      // 3. Se ainda não encontrou, usar Open-Meteo sem geocoding
+      if (!coords) {
+        return reply(`⚠️ Cidade "${query}" não encontrada.\n\nTente:\n#clima São Paulo\n#clima 01001-000 (CEP)\n#clima Rio de Janeiro`);
+      }
+
+      // Buscar dados do clima (Open-Meteo)
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${coords.lat}&longitude=${coords.lon}&current_weather=true&hourly=temperature_2m,relativehumidity_2m,precipitation_probability,weathercode&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_sum,weathercode,precipitation_probability_max&timezone=America%2FSao_Paulo&forecast_days=7`;
+
+      const res = await axios.get(url, { timeout: 15000 });
       const dados = res.data;
 
       if (!dados.current_weather) {
-        return reply('⚠️ Não foi possível obter dados climáticos para esta cidade.');
+        return reply('⚠️ Não foi possível obter dados climáticos no momento. Tente novamente.');
       }
 
       const atual = dados.current_weather;
-      const condicao = traduzirCondicao(atual.weathercode);
-      
-      // Dados atuais
+      const condicaoAtual = traduzirCondicao(atual.weathercode);
       const temperatura = Math.round(atual.temperature);
       const vento = Math.round(atual.windspeed);
       const umidade = dados.hourly?.relativehumidity_2m?.[new Date().getHours()] || 'N/A';
-      const precipitacao = dados.hourly?.precipitation_probability?.[new Date().getHours()] || 'N/A';
+      const precipitacaoAtual = dados.hourly?.precipitation_probability?.[new Date().getHours()] || 0;
 
-      // Previsão para os próximos dias
+      // Verificar alertas
+      let alertas = [];
+      if (atual.weathercode >= 95) alertas.push('⛈️ ALERTA DE TEMPESTADE!');
+      if (temperatura >= 40) alertas.push('🔥 ALERTA DE CALOR EXTREMO!');
+      if (temperatura <= 5) alertas.push('❄️ ALERTA DE FRIO EXTREMO!');
+      if (precipitacaoAtual >= 80) alertas.push('🌧️ CHUVA INTENSA!');
+
+      // Construir previsão 7 dias
       let previsao = '';
       const hoje = new Date();
-      const nomesDias = ['Hoje', 'Amanhã', 'Depois de amanhã'];
-      
-      for (let i = 0; i < 3; i++) {
+      const diasSemana = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+      for (let i = 0; i < 7; i++) {
         const data = new Date(hoje);
         data.setDate(data.getDate() + i);
         const tempMax = Math.round(dados.daily.temperature_2m_max[i]);
         const tempMin = Math.round(dados.daily.temperature_2m_min[i]);
         const chuva = dados.daily.precipitation_sum[i];
+        const probChuva = dados.daily.precipitation_probability_max[i] || 0;
         const condicaoDia = traduzirCondicao(dados.daily.weathercode[i]);
-        
-        previsao += `\n${nomesDias[i]} (${data.getDate()}/${data.getMonth()+1}):\n`;
-        previsao += `   ${condicaoDia.emoji} ${condicaoDia.desc}\n`;
-        previsao += `   🌡️ ${tempMax}°C / ${tempMin}°C | 💧 ${chuva}mm`;
+        const dia = i === 0 ? 'Hoje' : i === 1 ? 'Amanhã' : diasSemana[data.getDay()];
+
+        previsao += `\n${dia} (${data.getDate()}/${data.getMonth()+1}): ${condicaoDia.emoji} ${tempMax}°/${tempMin}° | 💧 ${probChuva}%`;
       }
 
-      const texto = `🌍 *Clima em ${nomeCidade}*
+      // Formatar resposta
+      let texto = `🌍 *Clima em ${coords.nome}*
 
-${condicao.emoji} *Agora:*
+${condicaoAtual.emoji} *Agora:*
 🌡️ Temperatura: ${temperatura}°C
 💨 Vento: ${vento} km/h
 💧 Umidade: ${umidade}%
-🌧️ Precipitação: ${precipitacao}%
+🌧️ Precipitação: ${precipitacaoAtual}%
 
-📅 *Próximos dias:*${previsao}
+📅 *Próximos 7 dias:*${previsao}`;
 
-🌅 Nascer do sol: ${new Date(dados.daily.sunrise[0]).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}
-🌇 Pôr do sol: ${new Date(dados.daily.sunset[0]).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}`;
+      // Adicionar alertas se houver
+      if (alertas.length > 0) {
+        texto += `\n\n⚠️ *ALERTAS:*`;
+        alertas.forEach(a => { texto += `\n${a}`; });
+      }
+
+      // Adicionar nascer/pôr do sol
+      if (dados.daily.sunrise && dados.daily.sunset) {
+        texto += `\n\n🌅 Nascer do sol: ${new Date(dados.daily.sunrise[0]).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}`;
+        texto += `\n🌇 Pôr do sol: ${new Date(dados.daily.sunset[0]).toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'})}`;
+      }
+
+      // Salvar no cache
+      climaCache.set(climaCacheKey, { data: texto, timestamp: Date.now() });
 
       return reply(texto);
     } catch (err) {
