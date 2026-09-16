@@ -4,7 +4,7 @@ const { embaralhar } = require('../lib/gameRuntime');
 
 module.exports = {
   name: 'pular',
-  aliases: ['p', 'skip', 'next'],
+  aliases: ['px', 'skip', 'next'],
   adminOnly: true,
 
   async execute({ sock, groupId, reply }) {
