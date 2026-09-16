@@ -1,5 +1,5 @@
 const { getGroupConfig, setGroupConfig } = require('../lib/database');
-const { parseDuracao, formatarDuracao, aplicarMuteTemporario, limparTimeout } = require('../lib/timeoutMute');
+const { parseDuracao, formatarDuracao, aplicarMuteTemporario, limparTimeout, desmutarAutomatico } = require('../lib/timeoutMute');
 
 module.exports = {
   name: 'mutar',
@@ -35,8 +35,8 @@ module.exports = {
       if (duracaoMs === null) {
         return reply('⚠️ Essa pessoa já está mutada permanentemente.');
       }
-      // Renova o timeout
-      limparTimeout(groupId, alvo); // limpa o anterior
+      // Renova o timeout — limpa o antigo
+      limparTimeout(groupId, alvo);
     }
 
     if (!muted.includes(alvo)) {
@@ -55,7 +55,7 @@ module.exports = {
     } catch (err) {
       // Fallback: tenta resolver via onWhatsApp
     }
-    
+
     // Se ainda não resolveu, tenta onWhatsApp
     if (nomeExibicao === '@' + numero) {
       try {
@@ -69,16 +69,18 @@ module.exports = {
     }
 
     if (duracaoMs === null) {
-      await reply({
+      // Mute permanente — envia como texto normal
+      await sock.sendMessage(groupId, {
         text: `🔇 ${nomeExibicao} foi mutado permanentemente e não pode mais enviar mensagens.`,
         mentions: [alvo]
-      });
+      }, { quoted: msg });
     } else {
-      await aplicarMuteTemporario(sock, groupId, alvo, duracaoMs, reply);
-      await reply({
-        text: `🔇 ${nomeExibicao} foi mutado por ${formatarDuracao(duracaoMs)} e foi desmutado automaticamente ao final.`,
+      // Mute temporário
+      await aplicarMuteTemporario(sock, groupId, alvo, duracaoMs);
+      await sock.sendMessage(groupId, {
+        text: `🔇 ${nomeExibicao} foi mutado por ${formatarDuracao(duracaoMs)} e será desmutado automaticamente ao final.`,
         mentions: [alvo]
-      });
+      }, { quoted: msg });
     }
   }
 };

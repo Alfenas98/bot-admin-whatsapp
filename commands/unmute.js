@@ -27,7 +27,7 @@ module.exports = {
     const novo = muted.filter(id => id !== alvo);
     setGroupConfig(groupId, 'muted', novo);
 
-    // Resolve o nome real do usuário (try group metadata first — fastest)
+    // Resolve o nome real do usuário
     let nomeExibicao = '@' + numero;
     try {
       const metadata = await sock.groupMetadata(groupId);
@@ -38,8 +38,7 @@ module.exports = {
     } catch (err) {
       // Fallback: tenta resolver via onWhatsApp
     }
-    
-    // Se ainda não resolveu, tenta onWhatsApp
+
     if (nomeExibicao === '@' + numero) {
       try {
         const whatsAppInfo = await sock.onWhatsApp(alvo);
@@ -51,9 +50,9 @@ module.exports = {
       }
     }
 
-    await reply({
+    await sock.sendMessage(groupId, {
       text: `🔊 ${nomeExibicao} foi desmutado e pode enviar mensagens novamente.`,
       mentions: [alvo]
-    });
+    }, { quoted: msg });
   }
 };
