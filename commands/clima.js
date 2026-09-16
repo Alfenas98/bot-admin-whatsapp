@@ -30,31 +30,27 @@ const coordenadasCache = {
   'palmas': { lat: -10.1753, lon: -48.3333, nome: 'Palmas, TO' }
 };
 
-// Mapear condições climáticas
-const condicoesClimaticas = {
-  'clearsky': { emoji: '☀️', desc: 'Céu limpo' },
-  'partlycloudy': { emoji: '⛅', desc: 'Parcialmente nublado' },
-  'cloudy': { emoji: '☁️', desc: 'Nublado' },
-  'rain': { emoji: '🌧️', desc: 'Chuva' },
-  'rainshowers': { emoji: '🌦️', desc: 'Chuvas isoladas' },
-  'snow': { emoji: '❄️', desc: 'Neve' },
-  'thunderstorm': { emoji: '⛈️', desc: 'Tempestade' },
-  'fog': { emoji: '🌫️', desc: 'Nevoeiro' },
-  'windy': { emoji: '💨', desc: 'Ventos fortes' },
-  'hail': { emoji: '🌨️', desc: 'Granizo' },
-  'mist': { emoji: '🌁', desc: 'Neblina' },
-  'drizzle': { emoji: '🌦️', desc: 'Garoa' },
-  'heavyrain': { emoji: '🌧️', desc: 'Chuva forte' },
-  'sleet': { emoji: '🌨️', desc: 'Chuva congelante' }
-};
-
-function traduzirCondicao(weatherCode) {
-  if (!weatherCode) return { emoji: '🌡️', desc: 'Indisponível' };
-  const condicaoLower = weatherCode.toLowerCase().replace(/\s+/g, '');
-  for (const [chave, info] of Object.entries(condicoesClimaticas)) {
-    if (condicaoLower.includes(chave)) return info;
-  }
-  return { emoji: '🌡️', desc: weatherCode };
+// Mapear condições climáticas por código WMO
+function traduzirCondicao(codigo) {
+  const cod = Number(codigo);
+  
+  if (cod === 0) return { emoji: '☀️', desc: 'Céu limpo' };
+  if (cod === 1) return { emoji: '🌤️', desc: 'Principalmente claro' };
+  if (cod === 2) return { emoji: '⛅', desc: 'Parcialmente nublado' };
+  if (cod === 3) return { emoji: '☁️', desc: 'Nublado' };
+  if (cod === 45 || cod === 48) return { emoji: '🌫️', desc: 'Nevoeiro' };
+  if (cod === 51 || cod === 53 || cod === 55) return { emoji: '🌦️', desc: 'Garoa' };
+  if (cod === 56 || cod === 57) return { emoji: '🌨️', desc: 'Garoa congelante' };
+  if (cod === 61 || cod === 63 || cod === 65) return { emoji: '🌧️', desc: 'Chuva' };
+  if (cod === 66 || cod === 67) return { emoji: '🌨️', desc: 'Chuva congelante' };
+  if (cod === 71 || cod === 73 || cod === 75) return { emoji: '❄️', desc: 'Neve' };
+  if (cod === 77) return { emoji: '🌨️', desc: 'Grãos de neve' };
+  if (cod === 80 || cod === 81 || cod === 82) return { emoji: '🌦️', desc: 'Chuvas isoladas' };
+  if (cod === 85 || cod === 86) return { emoji: '❄️', desc: 'Neve isolada' };
+  if (cod === 95) return { emoji: '⛈️', desc: 'Tempestade' };
+  if (cod === 96 || cod === 99) return { emoji: '⛈️', desc: 'Tempestade com granizo' };
+  
+  return { emoji: '🌡️', desc: 'Indisponível' };
 }
 
 module.exports = {
@@ -72,7 +68,7 @@ module.exports = {
 
     // Normalizar nome da cidade
     const cidadeLower = cidade.toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // remover acentos para comparação
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   
     // Buscar coordenadas
     let coords = null;
