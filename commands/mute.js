@@ -1,6 +1,5 @@
 const { getGroupConfig, setGroupConfig } = require('../lib/database');
 const { parseDuracao, formatarDuracao, aplicarMuteTemporario, limparTimeout, desmutarAutomatico } = require('../lib/timeoutMute');
-const { isGroupAdminCached } = require('../lib/groupCache');
 
 module.exports = {
   name: 'mutar',
@@ -14,20 +13,10 @@ module.exports = {
     const numero = args[0].replace(/[^0-9]/g, '');
     
     if (!numero) {
-      return reply('⚠️ Não foi possível identificar o número. Use: #mutar @pessoa ou #mutar 5511999998888');
+      return reply('⚠️ Não foi possível identificar o usuário. Use: #mutar @pessoa ou #mutar 5511999998888');
     }
     
     const alvo = numero + '@s.whatsapp.net';
-
-    // Verifica se o alvo é administrador (não pode mutar admin)
-    try {
-      const isAdminTarget = await isGroupAdminCached(sock, groupId, alvo);
-      if (isAdminTarget) {
-        return reply('⚠️ Não é possível mutar um administrador do grupo. Remova-o da admin primeiro.');
-      }
-    } catch (err) {
-      console.error('[mute] Falha ao verificar admin:', err.message);
-    }
 
     // Parse da duração (opcional)
     let duracaoMs = null;
@@ -59,43 +48,39 @@ module.exports = {
       setGroupConfig(groupId, 'muted', muted);
     }
 
-    // Resolve o nome real do usuário
-    let nomeExibicao = null;
+    // Resolve o nome real do usuário via groupMetadata (priority)
+    let nomeUsuario = numero;
     try {
       const metadata = await sock.groupMetadata(groupId);
       const participante = metadata.participants?.find(p => p.id === alvo);
       if (participante) {
-        nomeExibicao = participante.name || participante.profile || participante.pushName;
+        // Usa o nome de exibição do grupo (pushName) se disponível
+        if (participante.pushName) nomeUsuario = participante.pushName;
+        // Fallback para profile
+        else if (participante.profile) nomeUsuario = participante.profile;
       }
     } catch (err) {}
 
-    if (!nomeExibicao) {
+    // Fallback via fetchStatus se não encontrou no grupo
+    if (nomeUsuario === numero) {
       try {
         const status = await sock.fetchStatus(alvo);
-        if (status && status.name) nomeExibicao = status.name;
+        if (status && status.name) nomeUsuario = status.name.split(' ')[0]; // Usa primeiro nome
       } catch (e) {}
     }
 
-    if (!nomeExibicao) {
-      try {
-        const contact = await sock.contactQuery(alvo);
-        if (contact && contact.name) nomeExibicao = contact.name;
-      } catch (e) {}
-    }
-
-    if (!nomeExibicao) {
-      nomeExibicao = '@' + numero;
-    }
+    // Formata a menção (@nome se resolveram, senão @número)
+    const displayName = nomeUsuario !== numero ? nomeUsuario : numero;
 
     if (duracaoMs === null) {
       await sock.sendMessage(groupId, {
-        text: `🔇 ${nomeExibicao} foi mutado permanentemente e não pode mais enviar mensagens.`,
+        text: `🔇 ${displayName} foi mutado permanentemente e não pode mais enviar mensagens.`,
         mentions: [alvo]
       }, { quoted: msg });
     } else {
       await aplicarMuteTemporario(sock, groupId, alvo, duracaoMs);
       await sock.sendMessage(groupId, {
-        text: `🔇 ${nomeExibicao} foi mutado por ${formatarDuracao(duracaoMs)} e será desmutado automaticamente ao final.`,
+        text: `🔇 ${displayName} foi mutado por ${formatarDuracao(duracaoMs)} e será desmutado automaticamente ao final.`,
         mentions: [alvo]
       }, { quoted: msg });
     }
