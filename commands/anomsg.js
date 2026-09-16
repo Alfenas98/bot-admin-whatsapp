@@ -39,7 +39,7 @@ module.exports = {
 
     // Delay para dar tempo do chat "esquecer" a mensagem original
     // (o middleware já deleta imediatamente, mas o WhatsApp pode ter um flash)
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    await new Promise(resolve => setTimeout(resolve, 40000));
 
     // Salva no histórico para admins verem (com limite)
     const historico = [...historicoAtual];
