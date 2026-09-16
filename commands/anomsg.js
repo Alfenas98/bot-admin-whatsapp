@@ -22,7 +22,7 @@ module.exports = {
     }
 
     // Sanitização de texto (remove markdown que pode quebrar formatação)
-    const mensagemAnonima = args.join('').replace(/[*_~`]/g, '');
+    const mensagemAnonima = args.join(' ').replace(/[*_~`]/g, '');
 
     // Limite de caracteres
     if (mensagemAnonima.length > MAX_CARACTERES) {
