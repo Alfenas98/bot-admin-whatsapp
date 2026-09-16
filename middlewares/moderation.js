@@ -18,6 +18,19 @@ async function runModeration(sock, msg, groupId, senderId, messageType, textCont
   const config = getGroupConfig(groupId);
   const senderIsAdmin = await isGroupAdminCached(sock, groupId, senderId);
 
+  // Apagar mensagens de usuários mutados (se bot for admin)
+  const listaMutados = config.muted || [];
+  const senderIdSemHost = senderId.split('@')[0];
+  
+  for (const mutado of listaMutados) {
+    if (mutado.includes(senderIdSemHost)) {
+      try {
+        await sock.sendMessage(groupId, { delete: msg.key });
+      } catch (err) {}
+      return true; // Mensagem de usuário mutado, não processar mais nada
+    }
+  }
+
   // Apagar imediatamente mensagens de comando #anomsg para evitar identificação
   if (textContent && config.caixaAnonima?.ativo) {
     const prefix = config.prefixos?.[0] || '#';
