@@ -23,6 +23,7 @@ const { desembrulharMensagem } = require('./lib/unwrapMessage');
 const { temColetaAtiva, adicionarFigurinhaColeta } = require('./lib/pendingCapture');
 const { checarAgendamentos, agoraAjustado } = require('./lib/scheduler');
 const { carregarTimeouts } = require('./lib/timeoutMute');
+const { estaBanido, removerBanimento } = require('./lib/blocklist');
 const { createResilientSocket } = require('./lib/resilientSocket');
 const messageCache = require('./lib/messageCache');
 const { adicionarXP } = require('./lib/xp');
@@ -212,6 +213,20 @@ async function startBot() {
     if (event.action === 'add') {
       for (const participantId of event.participants) {
         registrarEntrada(event.id, participantId);
+        
+        // Verifica se o usuário está na lista negra
+        if (estaBanido(event.id, participantId)) {
+          try {
+            await sock.groupParticipantsUpdate(event.id, [participantId], 'remove');
+            await sock.sendMessage(event.id, {
+              text: `🚫 @${participantId.split('@')[0]} está na lista negra e foi removido automaticamente.`,
+              mentions: [participantId]
+            });
+            console.log(`[blocklist] ${participantId} foi banido de ${event.id} por estar na lista negra.`);
+          } catch (err) {
+            console.error('[blocklist] Falha ao remover usuário banido:', err.message);
+          }
+        }
       }
     }
 

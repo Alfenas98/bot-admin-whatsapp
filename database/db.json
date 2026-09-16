@@ -96,7 +96,8 @@
       },
       "muted": [
         "5511999998888@s.whatsapp.net"
-      ]
+      ],
+      "blocklist": []
     }
   },
   "users": {},
