@@ -2,7 +2,7 @@ const { queryLLM } = require('../lib/aiClient');
 
 module.exports = {
   name: 'ai',
-  aliases: ['ia'],
+  aliases: ['ia', 'bot'],
   adminOnly: false,
   async execute({ sock, msg, groupId, args, reply }) {
     if (args.length === 0) {
