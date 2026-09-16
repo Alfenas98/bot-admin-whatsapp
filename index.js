@@ -22,6 +22,7 @@ const { getAdminIdsCached, isGroupAdminCached, invalidateGroupCache } = require(
 const { desembrulharMensagem } = require('./lib/unwrapMessage');
 const { temColetaAtiva, adicionarFigurinhaColeta } = require('./lib/pendingCapture');
 const { checarAgendamentos, agoraAjustado } = require('./lib/scheduler');
+const { carregarTimeouts } = require('./lib/timeoutMute');
 const { createResilientSocket } = require('./lib/resilientSocket');
 const messageCache = require('./lib/messageCache');
 const { adicionarXP } = require('./lib/xp');
@@ -131,6 +132,11 @@ async function startBot() {
       }
     }, 3000);
   }
+
+  // --- Carrega mutes temporários pendentes ---
+  carregarTimeouts(sock).catch(err => {
+    console.error('[timeoutMute] Erro ao carregar timeouts:', err.message);
+  });
 
   sock.ev.on('creds.update', saveCreds);
 
