@@ -214,6 +214,21 @@ async function startBot() {
       for (const participantId of event.participants) {
         registrarEntrada(event.id, participantId);
         
+        // Registrar no histórico de membros
+        try {
+          const config = getGroupConfig(event.id);
+          const membros = [...(config.membros || [])];
+          membros.push({
+            timestamp: Date.now(),
+            acao: 'add',
+            membroId: participantId,
+            nome: participantId.split('@')[0]
+          });
+          // Limitar a 500 registros
+          if (membros.length > 500) membros.shift();
+          setGroupConfig(event.id, 'membros', membros);
+        } catch (e) {}
+        
         // Verifica se o usuário está na lista negra
         if (estaBanido(event.id, participantId)) {
           try {
@@ -234,6 +249,24 @@ async function startBot() {
       for (const participantId of event.participants) {
         const texto = config.saida.mensagem.replace('@user', `@${participantId.split('@')[0]}`);
         await sock.sendMessage(event.id, { text: texto, mentions: [participantId] });
+      }
+    }
+
+    // Registrar saída no histórico
+    if (event.action === 'remove') {
+      for (const participantId of event.participants) {
+        try {
+          const config = getGroupConfig(event.id);
+          const membros = [...(config.membros || [])];
+          membros.push({
+            timestamp: Date.now(),
+            acao: 'remove',
+            membroId: participantId,
+            nome: participantId.split('@')[0]
+          });
+          if (membros.length > 500) membros.shift();
+          setGroupConfig(event.id, 'membros', membros);
+        } catch (e) {}
       }
     }
 
