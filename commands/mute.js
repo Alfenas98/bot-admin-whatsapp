@@ -11,6 +11,11 @@ module.exports = {
     }
 
     const numero = args[0].replace(/[^0-9]/g, '');
+    
+    if (!numero) {
+      return reply('⚠️ Não foi possível identificar o número. Use: #mutar @pessoa ou #mutar 5511999998888');
+    }
+    
     const alvo = numero + '@s.whatsapp.net';
 
     // Parse da duração (opcional)
@@ -49,19 +54,22 @@ module.exports = {
     try {
       const metadata = await sock.groupMetadata(groupId);
       const participante = metadata.participants?.find(p => p.id === alvo);
-      if (participante?.profile) {
+      if (participante && participante.profile) {
         nomeExibicao = participante.profile;
+      } else if (participante && participante.id) {
+        // Fallback para o ID se não tiver nome personalizado
+        nomeExibicao = '@' + numero;
       }
     } catch (err) {
-      // Fallback: tenta resolver via onWhatsApp
+      // Silêncio — mantém fallback
     }
 
-    // Se ainda não resolveu, tenta onWhatsApp
+    // Se ainda não resolveu, tenta via fetchStatus (API do WhatsApp)
     if (nomeExibicao === '@' + numero) {
       try {
-        const whatsAppInfo = await sock.onWhatsApp(alvo);
-        if (whatsAppInfo && whatsAppInfo.name) {
-          nomeExibicao = whatsAppInfo.name;
+        const status = await sock.fetchStatus(alvo);
+        if (status && status.name) {
+          nomeExibicao = status.name;
         }
       } catch (e) {
         // Mantém o fallback
@@ -69,7 +77,7 @@ module.exports = {
     }
 
     if (duracaoMs === null) {
-      // Mute permanente — envia como texto normal
+      // Mute permanente
       await sock.sendMessage(groupId, {
         text: `🔇 ${nomeExibicao} foi mutado permanentemente e não pode mais enviar mensagens.`,
         mentions: [alvo]

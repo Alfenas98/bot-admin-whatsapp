@@ -13,42 +13,37 @@ module.exports = {
     const numero = args[0].replace(/[^0-9]/g, '');
     const alvo = numero + '@s.whatsapp.net';
 
+    if (!numero) {
+      return reply('⚠️ Não foi possível identificar o número. Use: #desmutar @pessoa ou #desmutar 5511999998888');
+    }
+
     const config = getGroupConfig(groupId);
     const muted = config.muted || [];
 
-    if (!muted.includes(alvo)) {
+    // Normaliza para comparação robusta
+    const mutedList = muted.map(id => id.replace(/[^0-9]/g, ''));
+    const jaMutado = mutedList.includes(numero);
+
+    if (!jaMutado) {
       return reply('⚠️ Essa pessoa não está mutada.');
     }
 
     // Limpa timeout se existente
     limparTimeout(groupId, alvo);
 
-    // Remove do mute
-    const novo = muted.filter(id => id !== alvo);
+    // Remove do mute (remove todos os formatos possíveis)
+    const novo = muted.filter(id => id.replace(/[^0-9]/g, '') !== numero);
     setGroupConfig(groupId, 'muted', novo);
 
     // Resolve o nome real do usuário
     let nomeExibicao = '@' + numero;
     try {
       const metadata = await sock.groupMetadata(groupId);
-      const participante = metadata.participants?.find(p => p.id === alvo);
-      if (participante?.profile) {
+      const participante = metadata.participants?.find(p => p.id.includes(numero));
+      if (participante && participante.profile) {
         nomeExibicao = participante.profile;
       }
-    } catch (err) {
-      // Fallback: tenta resolver via onWhatsApp
-    }
-
-    if (nomeExibicao === '@' + numero) {
-      try {
-        const whatsAppInfo = await sock.onWhatsApp(alvo);
-        if (whatsAppInfo && whatsAppInfo.name) {
-          nomeExibicao = whatsAppInfo.name;
-        }
-      } catch (e) {
-        // Mantém o fallback
-      }
-    }
+    } catch (err) {}
 
     await sock.sendMessage(groupId, {
       text: `🔊 ${nomeExibicao} foi desmutado e pode enviar mensagens novamente.`,

@@ -325,7 +325,11 @@ async function startBot() {
     if (foiRemovida) return;
 
     const configMute = getGroupConfig(groupId);
-    if (configMute.muted && configMute.muted.includes(senderId)) {
+    // Normaliza para comparação: pega apenas números
+    const senderNumero = senderId.replace(/[^0-9]/g, '');
+    const mutedList = configMute.muted || [];
+    const estaMutado = mutedList.some(mutedId => mutedId.includes(senderNumero));
+    if (estaMutado) {
       try {
         await sock.sendMessage(groupId, { delete: msg.key });
       } catch (err) {
