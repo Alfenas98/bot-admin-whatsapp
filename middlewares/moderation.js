@@ -118,14 +118,25 @@ async function runModeration(sock, msg, groupId, senderId, messageType, textCont
     ? Object.keys(msg.message.ephemeralMessage.message || {})[0] 
     : messageType;
   
-  // Detectar imagem em resposta: extendedTextMessage com quotedMessage contendo imagem
+  // Detectar mídia em resposta: extendedTextMessage com quotedMessage contendo mídia
   const isImageInReply = messageType === 'extendedTextMessage' && 
     msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage;
+  const isVideoInReply = messageType === 'extendedTextMessage' && 
+    msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.videoMessage;
+  const isAudioInReply = messageType === 'extendedTextMessage' && 
+    (msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.audioMessage || 
+     msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.documentMessageWithCaption);
+  const isStickerInReply = messageType === 'extendedTextMessage' && 
+    msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.stickerMessage;
   
-  const mediaKey = MEDIA_TYPE_MAP[messageTypeReal] || (isImageInReply ? 'imagem' : null);
+  const mediaKey = MEDIA_TYPE_MAP[messageTypeReal] || 
+    (isImageInReply ? 'imagem' : null) ||
+    (isVideoInReply ? 'video' : null) ||
+    (isAudioInReply ? 'audio' : null) ||
+    (isStickerInReply ? 'sticker' : null);
 
   if (process.env.DEBUG === 'true' && (mediaKey || messageTypeReal)) {
-    console.log(`[debug-moderation] messageType=${messageType} | messageTypeReal=${messageTypeReal} | mediaKey=${mediaKey} | isImageInReply=${isImageInReply} | admin=${senderIsAdmin}`);
+    console.log(`[debug-moderation] messageType=${messageType} | messageTypeReal=${messageTypeReal} | mediaKey=${mediaKey} | isImageInReply=${isImageInReply} | isVideoInReply=${isVideoInReply} | isAudioInReply=${isAudioInReply} | isStickerInReply=${isStickerInReply} | admin=${senderIsAdmin}`);
   }
 
   if (mediaKey && config.antimidia[mediaKey]) {
