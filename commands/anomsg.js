@@ -37,12 +37,9 @@ module.exports = {
       return reply(`⏳ Aguarde ${restante} segundos antes de enviar outra mensagem anônima.`);
     }
 
-    // Tenta apagar a mensagem original (requer bot como admin)
-    try {
-      await sock.sendMessage(groupId, { delete: msg.key });
-    } catch (err) {
-      console.log('[anomsg] Não foi possível apagar mensagem original:', err.message);
-    }
+    // Delay para dar tempo do chat "esquecer" a mensagem original
+    // (o middleware já deleta imediatamente, mas o WhatsApp pode ter um flash)
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
     // Salva no histórico para admins verem (com limite)
     const historico = [...historicoAtual];

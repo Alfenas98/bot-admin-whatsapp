@@ -18,6 +18,19 @@ async function runModeration(sock, msg, groupId, senderId, messageType, textCont
   const config = getGroupConfig(groupId);
   const senderIsAdmin = await isGroupAdminCached(sock, groupId, senderId);
 
+  // Apagar imediatamente mensagens de comando #anomsg para evitar identificação
+  if (textContent && config.caixaAnonima?.ativo) {
+    const prefix = config.prefixos?.[0] || '#';
+    if (textContent.toLowerCase().startsWith(prefix + 'anomsg') || 
+        textContent.toLowerCase().startsWith(prefix + 'anon') || 
+        textContent.toLowerCase().startsWith(prefix + 'caixa')) {
+      try {
+        await sock.sendMessage(groupId, { delete: msg.key });
+      } catch (e) {}
+      // Retorna false para o comando ainda ser processado normalmente
+    }
+  }
+
   if (config.antifake && !senderIsAdmin) {
     const numero = senderId.split('@')[0];
     const ddiValido = config.ddiPermitidos.some(ddi => numero.startsWith(ddi));
