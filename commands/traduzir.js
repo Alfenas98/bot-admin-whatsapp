@@ -55,48 +55,43 @@ module.exports = {
     }
 
     try {
-      // Detectar idioma usando API gratuita
-      const detectarIdioma = async (texto) => {
-        try {
-          const res = await axios.get(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(texto.substring(0, 100))}&langpair=en|pt-BR`);
-          const matches = res.data?.matches || [];
-          if (matches.length > 0) {
-            return matches[0].sourceLanguage || 'unknown';
-          }
-        } catch (e) {}
-        return 'auto';
-      };
-
-      const idiomaDetectado = await detectarIdioma(textoParaTraduzir);
-      
-      // Traduzir para pt-BR
-      const urlTraducao = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(textoParaTraduzir)}&langpair=${idiomaDetectado}|pt-BR`;
+      // Traduzir usando MyMemory
+      const urlTraducao = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(textoParaTraduzir)}&langpair=en|pt-BR`;
       
       const res = await axios.get(urlTraducao, { timeout: 10000 });
       
-      if (res.data?.responseStatus === 200 || res.data?.translatedText) {
-        const traducao = res.data.translatedText;
-        const idiomaNome = idiomaDetectado === 'en' ? 'Inglês' : 
-                          idiomaDetectado === 'es' ? 'Espanhol' :
-                          idiomaDetectado === 'fr' ? 'Francês' :
-                          idiomaDetectado === 'de' ? 'Alemão' :
-                          idiomaDetectado === 'it' ? 'Italiano' :
-                          idiomaDetectado === 'ja' ? 'Japonês' :
-                          idiomaDetectado === 'ko' ? 'Coreano' :
-                          idiomaDetectado === 'zh' ? 'Chinês' :
-                          idiomaDetectado === 'auto' ? 'Desconhecido' :
-                          idiomaDetectado;
-        
-        const textoTraduzido = `🇧🇷 *Tradução para Português-BR:*
+      // Usar a melhor tradução dos matches (ordem de qualidade)
+      const matches = res.data?.matches || [];
+      const melhorTraducao = matches.length > 0 
+        ? matches.sort((a, b) => b.quality - a.quality)[0].translation 
+        : res.data?.responseData?.translatedText;
+      
+      if (!melhorTraducao) {
+        return reply('⚠️ Não foi possível traduzir a mensagem. Tente novamente.');
+      }
+      
+      // Detectar idioma de origem
+      const idiomaDetectado = matches.length > 0 ? matches[0].source : 'unknown';
+      const idiomaCodigo = idiomaDetectado.split('-')[0].toLowerCase();
+      
+      const idiomaNome = idiomaCodigo === 'en' ? 'Inglês' : 
+                        idiomaCodigo === 'es' ? 'Espanhol' :
+                        idiomaCodigo === 'fr' ? 'Francês' :
+                        idiomaCodigo === 'de' ? 'Alemão' :
+                        idiomaCodigo === 'it' ? 'Italiano' :
+                        idiomaCodigo === 'ja' ? 'Japonês' :
+                        idiomaCodigo === 'ko' ? 'Coreano' :
+                        idiomaCodigo === 'zh' ? 'Chinês' :
+                        idiomaCodigo === 'pt' ? 'Português' :
+                        idiomaCodigo || 'Desconhecido';
+      
+      const textoTraduzido = `🇧🇷 *Tradução para Português-BR:*
 
-_${traducao}_
+_${melhorTraducao}_
 
 🌐 Idioma detectado: ${idiomaNome}`;
 
-        return reply(textoTraduzido);
-      } else {
-        return reply('⚠️ Não foi possível traduzir a mensagem. Tente novamente.');
-      }
+      return reply(textoTraduzido);
     } catch (err) {
       console.error('[traduzir] Erro:', err.message);
       return reply('⚠️ Erro ao traduzir. Verifique se o texto não é muito longo.');
