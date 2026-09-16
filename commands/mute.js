@@ -1,11 +1,10 @@
-const { getGroupConfig, setGroupConfig } = require('../lib/database');
-
 module.exports = {
-  name: 'mute',
+  name: 'mutar',
+  aliases: ['mute'],
   adminOnly: true,
-  async execute({ sock, groupId, args, reply }) {
+  async execute({ sock, msg, groupId, args, reply }) {
     if (args.length === 0) {
-      return reply('⚠️ Use: #mute @pessoa ou #mute número');
+      return reply('⚠️ Use: #mutar @pessoa ou #mutar número');
     }
 
     const numero = args[0].replace(/[^0-9]/g, '');
@@ -21,6 +20,29 @@ module.exports = {
     muted.push(alvo);
     setGroupConfig(groupId, 'muted', muted);
 
-    await reply(`🔇 @${numero} foi mutado e não pode mais enviar mensagens.`);
+    // Resolve o nome real do usuário (se disponível)
+    let nomeExibicao = '@' + numero;
+    try {
+      const perfil = await sock.getAboutMessage(alvo);
+      if (perfil && perfil.name) {
+        nomeExibicao = perfil.name;
+      }
+    } catch (e) {
+      // Tenta pelo cache do grupo
+      try {
+        const metadata = await sock.groupMetadata(groupId);
+        const participante = metadata.participants?.find(p => p.id === alvo);
+        if (participante?.profile) {
+          nomeExibicao = participante.profile;
+        }
+      } catch (err) {
+        // Mantém o fallback
+      }
+    }
+
+    await reply({
+      text: `🔇 ${nomeExibicao} foi mutado e não pode mais enviar mensagens.`,
+      mentions: [alvo]
+    });
   }
 };
