@@ -1,5 +1,5 @@
 const { getGroupConfig, setGroupConfig } = require('../lib/database');
-const { parseDuracao, formatarDuracao, aplicarMuteTemporario } = require('../lib/timeoutMute');
+const { parseDuracao, formatarDuracao, aplicarMuteTemporario, limparTimeout } = require('../lib/timeoutMute');
 
 module.exports = {
   name: 'mutar',
