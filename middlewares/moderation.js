@@ -111,10 +111,21 @@ async function runModeration(sock, msg, groupId, senderId, messageType, textCont
     }
   }
 
-  const mediaKey = MEDIA_TYPE_MAP[messageType];
+  // Verificar mídia em mensagens de resposta (reply)
+  // Quando alguém responde com imagem, o messageType pode ser 'ephemeralMessage' 
+  // ou a imagem pode estar em extendedTextMessage.quotedMessage
+  const messageTypeReal = messageType === 'ephemeralMessage' 
+    ? Object.keys(msg.message.ephemeralMessage.message || {})[0] 
+    : messageType;
+  
+  // Detectar imagem em resposta: extendedTextMessage com quotedMessage contendo imagem
+  const isImageInReply = messageType === 'extendedTextMessage' && 
+    msg.message?.extendedTextMessage?.contextInfo?.quotedMessage?.imageMessage;
+  
+  const mediaKey = MEDIA_TYPE_MAP[messageTypeReal] || (isImageInReply ? 'imagem' : null);
 
-  if (process.env.DEBUG === 'true' && mediaKey) {
-    console.log(`[debug-moderation] mediaKey=${mediaKey} | antimidia.${mediaKey}=${config.antimidia[mediaKey]} | admin=${senderIsAdmin}`);
+  if (process.env.DEBUG === 'true' && (mediaKey || messageTypeReal)) {
+    console.log(`[debug-moderation] messageType=${messageType} | messageTypeReal=${messageTypeReal} | mediaKey=${mediaKey} | isImageInReply=${isImageInReply} | admin=${senderIsAdmin}`);
   }
 
   if (mediaKey && config.antimidia[mediaKey]) {
