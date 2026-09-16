@@ -1,11 +1,12 @@
 const { getGroupConfig, setGroupConfig } = require('../lib/database');
 
 module.exports = {
-  name: 'unmute',
+  name: 'desmute',
+  aliases: ['unmute'],
   adminOnly: true,
   async execute({ sock, groupId, args, reply }) {
     if (args.length === 0) {
-      return reply('⚠️ Use: #unmute @pessoa ou #unmute número');
+      return reply('⚠️ Use: #desmute @pessoa ou #desmute número');
     }
 
     const numero = args[0].replace(/[^0-9]/g, '');
