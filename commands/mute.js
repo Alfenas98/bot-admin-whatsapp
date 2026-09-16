@@ -5,18 +5,52 @@ module.exports = {
   name: 'mutar',
   aliases: ['mute'],
   adminOnly: true,
+
   async execute({ sock, msg, groupId, args, reply }) {
     if (args.length === 0) {
       return reply('⚠️ Uso: #mutar @pessoa [tempo]\nTempo: 10m, 2h, 1d ou "perm" para mute permanente\nEx: #mutar @jose 10m  |  #mutar 5511999998888 30m  |  #mutar @jose perm');
     }
 
-    const numero = args[0].replace(/[^0-9]/g, '');
-    
-    if (!numero) {
-      return reply('⚠️ Não foi possível identificar o usuário. Use: #mutar @pessoa ou #mutar 5511999998888');
+    // Verificar se há menção na mensagem
+    const mencionados = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+    let alvo = '';
+    let nomeUsuario = '';
+
+    if (mencionados.length > 0) {
+      // Usar menção real (ID completo do WhatsApp)
+      alvo = mencionados[0];
+      // Tentar obter nome do participante
+      try {
+        const metadata = await sock.groupMetadata(groupId);
+        const participante = metadata.participants?.find(p => p.id === alvo);
+        if (participante?.pushName) {
+          nomeUsuario = participante.pushName;
+        } else {
+          nomeUsuario = alvo.split('@')[0];
+        }
+      } catch (err) {
+        nomeUsuario = alvo.split('@')[0];
+      }
+    } else {
+      // Fallback: extrair número do texto
+      const numero = args[0].replace(/[^0-9]/g, '');
+      
+      if (!numero) {
+        return reply('⚠️ Não foi possível identificar o usuário. Use: #mutar @pessoa ou #mutar 5511999998888');
+      }
+      
+      alvo = numero + '@s.whatsapp.net';
+      nomeUsuario = numero;
+      
+      // Tentar obter nome via groupMetadata
+      try {
+        const metadata = await sock.groupMetadata(groupId);
+        const participante = metadata.participants?.find(p => p.id === alvo);
+        if (participante?.pushName) {
+          nomeUsuario = participante.pushName;
+        }
+      } catch (err) {}
     }
-    
-    const alvo = numero + '@s.whatsapp.net';
 
     // Parse da duração (opcional)
     let duracaoMs = null;
@@ -48,39 +82,15 @@ module.exports = {
       setGroupConfig(groupId, 'muted', muted);
     }
 
-    // Resolve o nome real do usuário via groupMetadata (priority)
-    let nomeUsuario = numero;
-    try {
-      const metadata = await sock.groupMetadata(groupId);
-      const participante = metadata.participants?.find(p => p.id === alvo);
-      if (participante) {
-        // Usa o nome de exibição do grupo (pushName) se disponível
-        if (participante.pushName) nomeUsuario = participante.pushName;
-        // Fallback para profile
-        else if (participante.profile) nomeUsuario = participante.profile;
-      }
-    } catch (err) {}
-
-    // Fallback via fetchStatus se não encontrou no grupo
-    if (nomeUsuario === numero) {
-      try {
-        const status = await sock.fetchStatus(alvo);
-        if (status && status.name) nomeUsuario = status.name.split(' ')[0]; // Usa primeiro nome
-      } catch (e) {}
-    }
-
-    // Formata a menção (@nome se resolveram, senão @número)
-    const displayName = nomeUsuario !== numero ? nomeUsuario : numero;
-
     if (duracaoMs === null) {
       await sock.sendMessage(groupId, {
-        text: `🔇 ${displayName} foi mutado permanentemente e não pode mais enviar mensagens.`,
+        text: `🔇 ${nomeUsuario} foi mutado permanentemente e não pode mais enviar mensagens.`,
         mentions: [alvo]
       }, { quoted: msg });
     } else {
       await aplicarMuteTemporario(sock, groupId, alvo, duracaoMs);
       await sock.sendMessage(groupId, {
-        text: `🔇 ${displayName} foi mutado por ${formatarDuracao(duracaoMs)} e será desmutado automaticamente ao final.`,
+        text: `🔇 ${nomeUsuario} foi mutado por ${formatarDuracao(duracaoMs)} e será desmutado automaticamente ao final.`,
         mentions: [alvo]
       }, { quoted: msg });
     }
