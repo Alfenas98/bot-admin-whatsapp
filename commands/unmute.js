@@ -1,5 +1,6 @@
 const { getGroupConfig, setGroupConfig } = require('../lib/database');
 const { limparTimeout } = require('../lib/timeoutMute');
+const { isGroupAdminCached } = require('../lib/groupCache');
 
 module.exports = {
   name: 'desmutar',
@@ -20,7 +21,6 @@ module.exports = {
     const config = getGroupConfig(groupId);
     const muted = config.muted || [];
 
-    // Normaliza para comparação robusta
     const mutedList = muted.map(id => id.replace(/[^0-9]/g, ''));
     const jaMutado = mutedList.includes(numero);
 
@@ -28,10 +28,7 @@ module.exports = {
       return reply('⚠️ Essa pessoa não está mutada.');
     }
 
-    // Limpa timeout se existente
     limparTimeout(groupId, alvo);
-
-    // Remove do mute
     const novo = muted.filter(id => !id.includes(numero));
     setGroupConfig(groupId, 'muted', novo);
 
@@ -39,9 +36,7 @@ module.exports = {
     let nomeExibicao = null;
     try {
       const metadata = await sock.groupMetadata(groupId);
-      const participante = metadata.participants?.find(p => 
-        p.id === alvo || p.id.includes(numero)
-      );
+      const participante = metadata.participants?.find(p => p.id === alvo);
       if (participante) {
         nomeExibicao = participante.name || participante.profile || participante.pushName;
       }
@@ -50,18 +45,14 @@ module.exports = {
     if (!nomeExibicao) {
       try {
         const status = await sock.fetchStatus(alvo);
-        if (status && status.name) {
-          nomeExibicao = status.name;
-        }
+        if (status && status.name) nomeExibicao = status.name;
       } catch (e) {}
     }
 
     if (!nomeExibicao) {
       try {
         const contact = await sock.contactQuery(alvo);
-        if (contact && contact.name) {
-          nomeExibicao = contact.name;
-        }
+        if (contact && contact.name) nomeExibicao = contact.name;
       } catch (e) {}
     }
 

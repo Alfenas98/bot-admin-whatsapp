@@ -1,5 +1,6 @@
 const { getGroupConfig, setGroupConfig } = require('../lib/database');
 const { parseDuracao, formatarDuracao, aplicarMuteTemporario, limparTimeout, desmutarAutomatico } = require('../lib/timeoutMute');
+const { isGroupAdminCached } = require('../lib/groupCache');
 
 module.exports = {
   name: 'mutar',
@@ -17,6 +18,16 @@ module.exports = {
     }
     
     const alvo = numero + '@s.whatsapp.net';
+
+    // Verifica se o alvo é administrador (não pode mutar admin)
+    try {
+      const isAdminTarget = await isGroupAdminCached(sock, groupId, alvo);
+      if (isAdminTarget) {
+        return reply('⚠️ Não é possível mutar um administrador do grupo. Remova-o da admin primeiro.');
+      }
+    } catch (err) {
+      console.error('[mute] Falha ao verificar admin:', err.message);
+    }
 
     // Parse da duração (opcional)
     let duracaoMs = null;
@@ -49,60 +60,39 @@ module.exports = {
     }
 
     // Resolve o nome real do usuário
-    // 1. Tenta pelo pushName do contexto (nome de exibição do grupo)
     let nomeExibicao = null;
-    
-    // 2. Tenta pelo groupMetadata
     try {
       const metadata = await sock.groupMetadata(groupId);
-      const participante = metadata.participants?.find(p => 
-        p.id === alvo || p.id.includes(numero)
-      );
+      const participante = metadata.participants?.find(p => p.id === alvo);
       if (participante) {
         nomeExibicao = participante.name || participante.profile || participante.pushName;
       }
-    } catch (err) {
-      // Silêncio
-    }
-    
-    // 3. Fallback: usa pushName do evento (se disponível)
-    // Não temos pushName direto do command, então usa fetchStatus
+    } catch (err) {}
+
     if (!nomeExibicao) {
       try {
         const status = await sock.fetchStatus(alvo);
-        if (status && (status.name || status.statusMsg)) {
-          nomeExibicao = status.name || null;
-        }
-      } catch (e) {
-        // Mantém null
-      }
+        if (status && status.name) nomeExibicao = status.name;
+      } catch (e) {}
     }
-    
-    // 4. Último fallback: tenta contactQuery
+
     if (!nomeExibicao) {
       try {
         const contact = await sock.contactQuery(alvo);
-        if (contact && contact.name) {
-          nomeExibicao = contact.name;
-        }
-      } catch (e) {
-        // Mantém null
-      }
+        if (contact && contact.name) nomeExibicao = contact.name;
+      } catch (e) {}
     }
-    
-    // Se ainda não encontrou, usa o @ com o número
+
     if (!nomeExibicao) {
       nomeExibicao = '@' + numero;
     }
 
     if (duracaoMs === null) {
-      // Mute permanente
       await sock.sendMessage(groupId, {
         text: `🔇 ${nomeExibicao} foi mutado permanentemente e não pode mais enviar mensagens.`,
         mentions: [alvo]
       }, { quoted: msg });
     } else {
-      // Mute temporário
       await aplicarMuteTemporario(sock, groupId, alvo, duracaoMs);
       await sock.sendMessage(groupId, {
         text: `🔇 ${nomeExibicao} foi mutado por ${formatarDuracao(duracaoMs)} e será desmutado automaticamente ao final.`,
