@@ -55,8 +55,10 @@ module.exports = {
     if (historico.length > MAX_HISTORICO) historico.shift();
     setGroupConfig(groupId, 'caixaAnonima.historico', historico);
 
+    const contador = historico.length;
+    
     // Envia a mensagem anônima sem identificação do remetente
-    const textoAnonimo = `📬 *Mensagem Anônima:*\n\n${mensagemAnonima}`;
+    const textoAnonimo = `📬 *Mensagem Anônimo #${contador}:*\n\n${mensagemAnonima}`;
     
     try {
       await sock.sendMessage(groupId, { text: textoAnonimo });
