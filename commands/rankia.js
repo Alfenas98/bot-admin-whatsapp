@@ -55,7 +55,7 @@ Forneça:
 Responda em Português-BR, de forma leve e divertida. Use emojis.`;
 
       // Chamar API do Gemini
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
       
       const res = await axios.post(url, {
         contents: [{ parts: [{ text: prompt }] }]
