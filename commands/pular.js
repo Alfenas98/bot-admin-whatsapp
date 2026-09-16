@@ -1,6 +1,6 @@
 const { getGroupConfig } = require('../lib/database');
-const { getGameState, setGameState } = require('../lib/runtimeStore');
-const { embaralhar } = require('../gameRuntime');
+const { getGameState, setGameState } = require('../runtimeStore');
+const { embaralhar } = require('../lib/gameRuntime');
 
 module.exports = {
   name: 'pular',
