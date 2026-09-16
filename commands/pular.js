@@ -1,5 +1,5 @@
 const { getGroupConfig } = require('../lib/database');
-const { getGameState, setGameState } = require('../runtimeStore');
+const { getGameState, setGameState } = require('../lib/runtimeStore');
 const { embaralhar } = require('../lib/gameRuntime');
 
 module.exports = {
@@ -17,7 +17,7 @@ module.exports = {
     }
 
     if (estado.tipo === 'enquete') {
-      return reply('⚠️ O comando #p não funciona em enquetes. Aguente o tempo ou use #pararjogo.');
+      return reply('⚠️ O comando #px não funciona em enquetes. Aguente o tempo ou use #pararjogo.');
     }
 
     // Obter jogo atual
@@ -25,7 +25,7 @@ module.exports = {
     let jogo = null;
     
     try {
-      jogo = require(`../games/${jogoId}.js`);
+      jogo = require(`../lib/games/${jogoId}.js`);
     } catch (err) {
       return reply('⚠️ Não foi possível carregar o jogo atual.');
     }
@@ -53,7 +53,7 @@ module.exports = {
     const TEMPO_PERGUNTA_MS = 30000;
     
     // Limpar timeout anterior se existir
-    const { runtimeState } = require('../gameRuntime');
+    const { runtimeState } = require('../lib/gameRuntime');
     const runtime = runtimeState.get(groupId);
     if (runtime?.timeoutId) {
       clearTimeout(runtime.timeoutId);
@@ -66,7 +66,7 @@ module.exports = {
       });
       
       // Próxima pergunta normal
-      const { proximaPergunta } = require('../gameRuntime');
+      const { proximaPergunta } = require('../lib/gameRuntime');
       const novoEstado = getGameState(groupId);
       if (novoEstado) {
         novoEstado.perguntaIndex += 1;
