@@ -41,17 +41,23 @@ module.exports = {
         ? (listaUsuarios.reduce((acc, [, d]) => acc + (d.nivel || 1), 0) / listaUsuarios.length).toFixed(1)
         : 0;
 
-      // Criar mapa de participantes para obter nomes
+      // Criar mapa de participantes para obter nomes e IDs
       const participantesMap = {};
       for (const p of participantes) {
         participantesMap[p.id] = p.pushName || p.name || p.id.split('@')[0];
+        // Também mapear sem @s.whatsapp.net para busca
+        participantesMap[p.id.replace('@s.whatsapp.net', '')] = p.pushName || p.name || p.id.split('@')[0];
       }
 
-      // Top 5 com nomes reais
+      // Top 5 com nomes reais e menções
+      const mencoes = [];
       const top5 = listaUsuarios.slice(0, 5)
         .map(([id, dados], i) => {
           const nomeReal = participantesMap[id] || participantesMap[id.replace('@s.whatsapp.net', '')] || id.split('@')[0];
-          return `${i + 1}. ${nomeReal} - Nível ${dados.nivel || 1} (${dados.mensagens || 0} msgs)`;
+          // Adicionar ID para menção (formato WhatsApp)
+          const idMencao = id.includes('@') ? id : `${id}@s.whatsapp.net`;
+          mencoes.push(idMencao);
+          return `${i + 1}. @${idMencao.split('@')[0]} - Nível ${dados.nivel || 1} (${dados.mensagens || 0} msgs)`;
         })
         .join('\n');
 
@@ -93,7 +99,13 @@ Responda em Português-BR, de forma leve e divertida. Use emojis.`;
         return reply('⚠️ A IA não conseguiu analisar o ranking. Tente novamente.');
       }
 
-      return reply(`🤖 *Análise IA do Ranking*\n\n${resposta}`);
+      // Enviar com menções
+      const textoFinal = `🤖 *Análise IA do Ranking*\n\n${resposta}`;
+      
+      return await sock.sendMessage(groupId, {
+        text: textoFinal,
+        mentions: mencoes
+      });
     } catch (err) {
       console.error('[rankia] Erro:', err.message);
       if (err.response?.status === 429) {
