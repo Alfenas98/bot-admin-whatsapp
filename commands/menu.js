@@ -5,57 +5,15 @@ function status(v) {
 }
 
 const CATEGORIAS = {
-  seguranca: `*🔐 Segurança*
-#antilink | #antilinkhard | #antifake | #ddi <código>
-#antipalavrao | #palavrao add|remover|lista
-#antienquete | #anticontato | #x9 | #anticlone
-#antiimagem | #antivideo | #antiaudio | #antisticker | #antidocumento
-#antifloodfigurinha on|off|limite|tempo
-#antispamrepetido on|off|limite
-#antimarcacaomassa on|off|limite
-#limitecaracteres on|off|<número>
-#whitelist add|remover <numero>`,
+  seguranca: `*🔐 Segurança*\n#antilink | #antilinkhard | #antifake | #ddi <código>\n#antipalavrao | #palavrao add|remover|lista\n#antienquete | #anticontato | #x9 | #anticlone\n#antiimagem | #antivideo | #antiaudio | #antisticker | #antidocumento\n#antifloodfigurinha on|off|limite|tempo\n#antispamrepetido on|off|limite\n#antimarcacaomassa on|off|limite\n#limitecaracteres on|off|<número>\n#whitelist add|remover <numero>`, 
 
-  admin: `*🛡️ Administração*
-#soadm on|off
-#ban @user | #promover @user | #rebaixar @user
-#fechar | #abrir
-#apagar (responda a mensagem)
-#prefixo add|remover <símbolo>
-#inatividade on|off|dias <número>
-#inativos [remover]
-#warn @user | #warns @user | #resetwarn @user | #warnsystem limite <n>
-#linkgrupo
-#backup
-#apenasadmin on|off (só admins podem usar QUALQUER comando)
-#agendamento mensagem|backup|resumo|sorteio|lembrete|listar|remover
-#auditoria on|off|destino <numero>
-#alertagrupo on|off
-#broadcast <mensagem> | origem on|off | receber on|off
-#sync definirmodelo | aplicar`,
+  admin: `*🛡️ Administração*\n#soadm on|off\n#ban @user | #promover @user | #rebaixar @user\n#fechar | #abrir\n#apagar (responda a mensagem)\n#prefixo add|remover <símbolo>\n#inatividade on|off|dias <número>\n#inativos [remover]\n#warn @user | #warns @user | #resetwarn @user | #warnsystem limite <n>\n#linkgrupo\n#backup\n#apenasadmin on|off (só admins podem usar QUALQUER comando)\n#agendamento mensagem|backup|resumo|sorteio|lembrete|listar|remover\n#auditoria on|off|destino <numero>\n#alertagrupo on|off\n#broadcast <mensagem> | origem on|off | receber on|off\n#sync definirmodelo | aplicar`,
 
-  engajamento: `*⭐ Engajamento*
-#levelsystem on|off
-#level (vê seu progresso)
-#top10 (ranking do grupo)
-#rankdiario (ranking só de hoje, reseta à meia-noite)
-#autosticker on|off
-#autoresposta on|off|add|remover|lista
-#zoeiranovato on|off|frase add|listar|remover|limpar (zoa homens na apresentação, por nome)
-#namorar @user (propõe) | #aceitar | #terminar | #casal [@user]
-#casar @user (pede casamento pra quem já namora)
-#enquete Pergunta | Opção 1 | Opção 2
-#sorteio <segundos> <prêmio>
-#jogos (lista jogos disponíveis)
-#jogo <número>
-#jogos addfigurinha <número> (envie com uma figurinha)
-#pararjogo`,
+  engajamento: `*⭐ Engajamento*\n#levelsystem on|off\n#level (vê seu progresso)\n#top10 (ranking do grupo)\n#rankdiario (ranking só de hoje, reseta à meia-noite)\n#autosticker on|off\n#autoresposta on|off|add|remover|lista\n#zoeiranovato on|off|frase add|listar|remover|limpar (zoa homens na apresentação, por nome)\n#namorar @user (propõe) | #aceitar | #terminar | #casal [@user]\n#casar @user (pede casamento pra quem já namora)\n#enquete Pergunta | Opção 1 | Opção 2\n#sorteio <segundos> <prêmio>\n#jogos (lista jogos disponíveis)\n#jogo <número>\n#jogos addfigurinha <número> (envie com uma figurinha)\n#pararjogo`,
 
-  geral: `*⚙️ Geral*
-#boasvindas on|off|mensagem <texto>
-#saida on|off|mensagem <texto>
-#ativarpadrao (liga x9, antidocumento, anticlone, boasvindas, saida de uma vez)
-#menu (este painel)`
+  inteligencia: `*🤖 Inteligência Artificial*\n#ai <pergunta>\n#resumir <texto>\n#traduzir pt|en "texto"\n#sentimento <texto>\n#topicos <texto>\n#code "requisição"`,
+
+  geral: `*⚙️ Geral*\n#boasvindas on|off|mensagem <texto>\n#saida on|off|mensagem <texto>\n#ativarpadrao (liga x9, antidocumento, anticlone, boasvindas, saida de uma vez)\n#menu (este painel)`
 };
 
 module.exports = {
@@ -101,6 +59,7 @@ module.exports = {
 #menu seguranca
 #menu admin
 #menu engajamento
+#menu inteligencia
 #menu geral
 
 Apenas admins do grupo podem usar comandos de configuração.
