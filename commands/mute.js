@@ -40,7 +40,6 @@ module.exports = {
       if (duracaoMs === null) {
         return reply('⚠️ Essa pessoa já está mutada permanentemente.');
       }
-      // Renova o timeout — limpa o antigo
       limparTimeout(groupId, alvo);
     }
 
@@ -49,31 +48,51 @@ module.exports = {
       setGroupConfig(groupId, 'muted', muted);
     }
 
-    // Resolve o nome real do usuário (try group metadata first — fastest)
-    let nomeExibicao = '@' + numero;
+    // Resolve o nome real do usuário
+    // 1. Tenta pelo pushName do contexto (nome de exibição do grupo)
+    let nomeExibicao = null;
+    
+    // 2. Tenta pelo groupMetadata
     try {
       const metadata = await sock.groupMetadata(groupId);
-      const participante = metadata.participants?.find(p => p.id === alvo);
-      if (participante && participante.profile) {
-        nomeExibicao = participante.profile;
-      } else if (participante && participante.id) {
-        // Fallback para o ID se não tiver nome personalizado
-        nomeExibicao = '@' + numero;
+      const participante = metadata.participants?.find(p => 
+        p.id === alvo || p.id.includes(numero)
+      );
+      if (participante) {
+        nomeExibicao = participante.name || participante.profile || participante.pushName;
       }
     } catch (err) {
-      // Silêncio — mantém fallback
+      // Silêncio
     }
-
-    // Se ainda não resolveu, tenta via fetchStatus (API do WhatsApp)
-    if (nomeExibicao === '@' + numero) {
+    
+    // 3. Fallback: usa pushName do evento (se disponível)
+    // Não temos pushName direto do command, então usa fetchStatus
+    if (!nomeExibicao) {
       try {
         const status = await sock.fetchStatus(alvo);
-        if (status && status.name) {
-          nomeExibicao = status.name;
+        if (status && (status.name || status.statusMsg)) {
+          nomeExibicao = status.name || null;
         }
       } catch (e) {
-        // Mantém o fallback
+        // Mantém null
       }
+    }
+    
+    // 4. Último fallback: tenta contactQuery
+    if (!nomeExibicao) {
+      try {
+        const contact = await sock.contactQuery(alvo);
+        if (contact && contact.name) {
+          nomeExibicao = contact.name;
+        }
+      } catch (e) {
+        // Mantém null
+      }
+    }
+    
+    // Se ainda não encontrou, usa o @ com o número
+    if (!nomeExibicao) {
+      nomeExibicao = '@' + numero;
     }
 
     if (duracaoMs === null) {

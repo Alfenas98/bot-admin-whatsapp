@@ -31,19 +31,43 @@ module.exports = {
     // Limpa timeout se existente
     limparTimeout(groupId, alvo);
 
-    // Remove do mute (remove todos os formatos possíveis)
-    const novo = muted.filter(id => id.replace(/[^0-9]/g, '') !== numero);
+    // Remove do mute
+    const novo = muted.filter(id => !id.includes(numero));
     setGroupConfig(groupId, 'muted', novo);
 
     // Resolve o nome real do usuário
-    let nomeExibicao = '@' + numero;
+    let nomeExibicao = null;
     try {
       const metadata = await sock.groupMetadata(groupId);
-      const participante = metadata.participants?.find(p => p.id.includes(numero));
-      if (participante && participante.profile) {
-        nomeExibicao = participante.profile;
+      const participante = metadata.participants?.find(p => 
+        p.id === alvo || p.id.includes(numero)
+      );
+      if (participante) {
+        nomeExibicao = participante.name || participante.profile || participante.pushName;
       }
     } catch (err) {}
+
+    if (!nomeExibicao) {
+      try {
+        const status = await sock.fetchStatus(alvo);
+        if (status && status.name) {
+          nomeExibicao = status.name;
+        }
+      } catch (e) {}
+    }
+
+    if (!nomeExibicao) {
+      try {
+        const contact = await sock.contactQuery(alvo);
+        if (contact && contact.name) {
+          nomeExibicao = contact.name;
+        }
+      } catch (e) {}
+    }
+
+    if (!nomeExibicao) {
+      nomeExibicao = '@' + numero;
+    }
 
     await sock.sendMessage(groupId, {
       text: `🔊 ${nomeExibicao} foi desmutado e pode enviar mensagens novamente.`,
