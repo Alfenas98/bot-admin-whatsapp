@@ -25,50 +25,93 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Remover acentos para busca
-function removerAcentos(str) {
-  return str.normalize('NFD').replace(/[̀-ͯ]/g, '');
+function normalizar(str) {
+  return str
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-zA-Z0-9\s-]/g, '')
+    .trim();
 }
 
-// Buscar vídeo no YouTube via scrape (sem API key)
-async function buscarVideoId(query) {
-  const termosBusca = [
+async function buscarYouTube(query) {
+  // Gerar variações da busca
+  const variacoes = [
     query,
-    removerAcentos(query),
+    normalizar(query),
+    query.replace(/[^a-zA-Z0-9\s-]/g, ''),
     query.split('-')[0]?.trim(),
-    query.replace(/[^a-zA-Z0-9\s]/g, ''),
-    query.split(' ').slice(0, 3).join(' ')
-  ];
+    query.split(' ').slice(0, 3).join(' '),
+    query.split(' ').slice(0, 2).join(' ')
+  ].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
   
-  for (const termo of termosBusca) {
-    if (!termo) continue;
+  for (const termo of variacoes) {
+    if (!termo || termo.length < 3) continue;
     
     try {
       const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(termo)}`;
       const res = await axios.get(url, {
         timeout: 15000,
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept-Language': 'pt-BR,pt;q=0.9'
-        }
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+          'Accept-Encoding': 'gzip, deflate, br'
+        },
+        decompress: true
       });
       
-      // Buscar videoId e título
-      const videoIdMatch = res.data.match(/"videoId":"([a-zA-Z0-9_-]{11})"/g);
-      const titleMatch = res.data.match(/"title":{"runs":\[{"text":"([^"]+)"/g);
+      const html = res.data;
       
-      if (videoIdMatch && videoIdMatch.length > 0) {
-        for (let i = 0; i < Math.min(videoIdMatch.length, 5); i++) {
-          const vid = videoIdMatch[i].match(/"videoId":"([a-zA-Z0-9_-]{11})"/)?.[1];
-          const tit = titleMatch?.[i]?.match(/"title":{"runs":\[{"text":"([^"]+)"/)?.[1] || termo;
-          
-          if (vid) {
-            return { videoId: vid, titulo: tit };
+      // Múltiplos padrões para encontrar videoId
+      const padroes = [
+        /"videoId":"([a-zA-Z0-9_-]{11})"/g,
+        /"videoId\\":\\"([a-zA-Z0-9_-]{11})\\/g,
+        /watch\?v=([a-zA-Z0-9_-]{11})/g,
+        /"videoId":"([a-zA-Z0-9_-]{11})"/g,
+        /\\"videoId\\":\\"([a-zA-Z0-9_-]{11})\\/g
+      ];
+      
+      const videoIds = new Set();
+      
+      for (const padrao of padroes) {
+        let match;
+        while ((match = padrao.exec(html)) !== null) {
+          const vid = match[1];
+          if (vid && vid.length === 11) {
+            videoIds.add(vid);
           }
         }
       }
+      
+      // Buscar títulos
+      const titulos = [];
+      const titPadrao = /"title":{"runs":\[{"text":"([^"]+)"/g;
+      let titMatch;
+      while ((titMatch = titPadrao.exec(html)) !== null) {
+        titulos.push(titMatch[1]);
+      }
+      
+      if (videoIds.size > 0) {
+        const ids = Array.from(videoIds);
+        for (let i = 0; i < Math.min(ids.length, 5); i++) {
+          return {
+            videoId: ids[i],
+            titulo: titulos[i] || termo
+          };
+        }
+      }
+      
+      // Segundo padrão: buscar no JSON embutido
+      const jsonMatch = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+      if (jsonMatch) {
+        return {
+          videoId: jsonMatch[1],
+          titulo: termo
+        };
+      }
+      
     } catch (e) {
-      console.log(`[musica] Erro busca "${termo}":`, e.message);
+      console.log(`[musica] Erro ao buscar "${termo}":`, e.message);
       continue;
     }
   }
@@ -76,7 +119,6 @@ async function buscarVideoId(query) {
   return null;
 }
 
-// Baixar via ytdl-core
 async function baixarYTDL(urlVideo, caminhoSaida) {
   const ytdl = require('@distube/ytdl-core');
   
@@ -94,7 +136,6 @@ async function baixarYTDL(urlVideo, caminhoSaida) {
     )[0];
     url = melhor.url;
   } else {
-    // Stream direto
     const stream = ytdl(urlVideo, { quality: 'lowestaudio', filter: 'audioonly' });
     const writeStream = fs.createWriteStream(caminhoSaida);
     let totalSize = 0;
@@ -155,20 +196,18 @@ module.exports = {
     const caminhoArquivo = path.join(DOWNLOAD_DIR, nomeArquivo);
 
     try {
-      await reply('🔍 Buscando música...');
+      await reply('🔍 Buscando...');
 
-      // Buscar vídeo no YouTube (via scrape)
-      let video = await buscarVideoId(query);
+      const video = await buscarYouTube(query);
       
       if (!video) {
-        return reply(`⚠️ Não encontrei "${query}". Tente outro termo.`);
+        return reply(`⚠️ Não encontrei "${query}". Tente outro termo ou verifique a ortografia.`);
       }
 
       await reply(`🎵 ${video.titulo}\n⏳ Baixando...`);
 
       const urlVideo = `https://www.youtube.com/watch?v=${video.videoId}`;
       
-      // Baixar via ytdl-core com retry
       let sucesso = false;
       let erro = null;
       
@@ -178,12 +217,10 @@ module.exports = {
           sucesso = true;
         } catch (e) {
           erro = e;
-          console.log(`[musica] Tentativa ${i+1} falhou:`, e.message);
+          console.log(`[musica] Tentativa ${i+1}:`, e.message);
           
           if (e.message?.includes('429') || e.statusCode === 429) {
             if (i < 2) await delay(20000 * (i + 1));
-          } else if (e.message?.includes('too_large')) {
-            return reply('⚠️ Música muito grande!');
           } else {
             break;
           }
@@ -191,10 +228,9 @@ module.exports = {
       }
       
       if (!sucesso) {
-        return reply('⚠️ YouTube está limitando requisições. Tente em 5-10 minutos.');
+        return reply('⚠️ YouTube está limitando. Tente em 5-10 min.');
       }
 
-      // Validar
       if (!fs.existsSync(caminhoArquivo)) {
         return reply('⚠️ Erro ao processar.');
       }
