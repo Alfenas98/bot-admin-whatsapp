@@ -78,34 +78,47 @@ async function buscarYouTube(query) {
 }
 
 async function baixarComYtDlp(urlVideo, caminhoSaida) {
-  return new Promise((resolve, reject) => {
-    // Tentar encontrar yt-dlp no PATH ou em locais comuns
-    const comandos = [
-      `yt-dlp --extract-audio --audio-format mp3 --audio-quality 5 --max-filesize 15M --no-playlist --no-warnings --output "${caminhoSaida}" "${urlVideo}"`,
-      `/usr/local/bin/yt-dlp --extract-audio --audio-format mp3 --audio-quality 5 --max-filesize 15M --no-playlist --no-warnings --output "${caminhoSaida}" "${urlVideo}"`,
-      `/usr/bin/yt-dlp --extract-audio --audio-format mp3 --audio-quality 5 --max-filesize 15M --no-playlist --no-warnings --output "${caminhoSaida}" "${urlVideo}"`,
-      `python3 -m ytdlp --extract-audio --audio-format mp3 --audio-quality 5 --max-filesize 15M --no-playlist --no-warnings --output "${caminhoSaida}" "${urlVideo}"`,
-    ];
-    
-    let tentativa = 0;
-    
-    function tentar() {
-      if (tentativa >= comandos.length) {
-        return reject(new Error('yt-dlp não encontrado'));
-      }
+  const caminhos = [
+    'yt-dlp',
+    '/usr/local/bin/yt-dlp',
+    '/usr/bin/yt-dlp',
+    '/root/.local/bin/yt-dlp',
+    `${process.env.HOME}/.local/bin/yt-dlp`
+  ];
+  
+  for (const ytdlp of caminhos) {
+    try {
+      const comando = [
+        `"${ytdlp}"`,
+        '--extract-audio',
+        '--audio-format mp3',
+        '--audio-quality 5',
+        '--max-filesize 15M',
+        '--no-playlist',
+        '--no-warnings',
+        '--no-check-certificates',
+        '--user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"',
+        `--output "${caminhoSaida}"`,
+        `"${urlVideo}"`
+      ].join(' ');
       
-      exec(comandos[tentativa], { timeout: 120000, cwd: DOWNLOAD_DIR }, (error) => {
-        if (error) {
-          tentativa++;
-          tentar();
-        } else {
-          resolve();
-        }
+      await new Promise((resolve, reject) => {
+        exec(comando, { timeout: 120000, cwd: DOWNLOAD_DIR }, (error, stdout, stderr) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve();
+          }
+        });
       });
+      
+      return true;
+    } catch (e) {
+      continue;
     }
-    
-    tentar();
-  });
+  }
+  
+  return false;
 }
 
 async function baixarComAxios(urlVideo, caminhoSaida) {
@@ -183,22 +196,32 @@ module.exports = {
       const urlVideo = `https://www.youtube.com/watch?v=${videoId}`;
       
       let sucesso = false;
+      let ultimoErro = null;
       
       // Tentar yt-dlp primeiro
       try {
-        await baixarComYtDlp(urlVideo, caminhoArquivo);
-        sucesso = true;
+        sucesso = await baixarComYtDlp(urlVideo, caminhoArquivo);
       } catch (e) {
         console.log('[musica] yt-dlp falhou:', e.message);
-        
-        // Fallback: ytdl-core
+        ultimoErro = e;
+      }
+      
+      // Fallback: ytdl-core
+      if (!sucesso) {
         try {
           await baixarComAxios(urlVideo, caminhoArquivo);
           sucesso = true;
         } catch (e2) {
           console.log('[musica] ytdl-core falhou:', e2.message);
-          throw e2;
+          ultimoErro = e2;
         }
+      }
+      
+      if (!sucesso) {
+        if (ultimoErro?.message?.includes('429') || ultimoErro?.statusCode === 429) {
+          return reply('⚠️ YouTube está limitando requisições. Tente novamente em 5-10 minutos.');
+        }
+        throw ultimoErro || new Error('Falha desconhecida');
       }
 
       // Encontrar arquivo
