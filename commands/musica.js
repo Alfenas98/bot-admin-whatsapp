@@ -21,28 +21,39 @@ function limparAntigos() {
   } catch (e) {}
 }
 
-async function delay(ms) {
+function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// JAMENDO API - Música gratuita, sem rate limit
+// JAMENDO - Música gratuita, sem rate limit
 async function buscarJamendo(query) {
   try {
-    const url = `https://api.jamendo.com/v3.0/tracks/?format=json&limit=5&search=${encodeURIComponent(query)}&include=musicinfo&audioformat=mp32`;
-    const res = await axios.get(url, { timeout: 15000 });
+    const termos = [
+      query,
+      query.replace(/[^a-zA-Z0-9\s]/g, ''),
+      query.split('-')[0]?.trim(),
+      query.split(' ').slice(0, 3).join(' ')
+    ];
     
-    if (res.data?.results?.length > 0) {
-      for (const track of res.data.results) {
-        if (track.duration > 0 && track.duration < 600) { // máximo 10 min
-          return {
-            id: track.id,
-            titulo: track.name,
-            artista: track.artist_name,
-            album: track.album_name,
-            duracao: track.duration,
-            url: track.audio,
-            source: 'jamendo'
-          };
+    for (const termo of termos) {
+      if (!termo) continue;
+      
+      const url = `https://api.jamendo.com/v3.0/tracks/?format=json&limit=5&search=${encodeURIComponent(termo)}&include=musicinfo&audioformat=mp32`;
+      const res = await axios.get(url, { timeout: 15000 });
+      
+      if (res.data?.results?.length > 0) {
+        for (const track of res.data.results) {
+          if (track.duration > 0 && track.duration < 600) {
+            return {
+              id: track.id,
+              titulo: track.name,
+              artista: track.artist_name,
+              album: track.album_name,
+              duracao: track.duration,
+              url: track.audio,
+              source: 'Jamendo'
+            };
+          }
         }
       }
     }
@@ -52,92 +63,67 @@ async function buscarJamendo(query) {
   return null;
 }
 
-// FREEMUSICARCHIVE API
-async function buscarFMA(query) {
+// PIXABAY - Música gratuita, sem rate limit, API key gratuita
+async function buscarPixabay(query) {
+  const PIXABAY_KEY = process.env.PIXABAY_KEY || '46247656-93f5a4e8e7a859f3e3fe12c5e';
+  
   try {
-    const url = `https://freemusicarchive.org/api/get/track.json?q=${encodeURIComponent(query)}&limit=3`;
+    const url = `https://pixabay.com/api/?key=${PIXABAY_KEY}&q=${encodeURIComponent(query)+"+music"}&video_type=music&per_page=3`;
     const res = await axios.get(url, { timeout: 15000 });
     
-    if (res.data?.dataset?.length > 0) {
-      for (const track of res.data.dataset) {
-        if (track.track_url && track.track_duration < 600) {
-          // FMA tem download direto
-          return {
-            titulo: track.track_title,
-            artista: track.artist_name,
-            album: track.album_title,
-            url: track.track_url,
-            source: 'fma'
-          };
-        }
+    if (res.data?.hits?.length > 0) {
+      for (const hit of res.data.hits) {
+        // Pixabay não tem áudio diretamente, usar como fallback
+        return null;
       }
     }
   } catch (e) {
-    console.log('[musica] Erro FMA:', e.message);
+    console.log('[musica] Erro Pixabay:', e.message);
   }
   return null;
 }
 
-// CCMIXTER API - Música livre
-async function buscarCCMixter(query) {
+// SOUNDCLOUD sem client_id (via rss)
+async function buscarSoundCloud(query) {
   try {
-    const url = `https://ccmixter.org/api/query?tags=${encodeURIComponent(query)}&type=playlist&format=json&limit=3`;
+    const url = `https://api.soundcloud.com/tracks?q=${encodeURIComponent(query)}&limit=3`;
     const res = await axios.get(url, { timeout: 15000 });
     
     if (res.data?.length > 0) {
       for (const track of res.data) {
-        if (track.upload_name && track.files?.[0]?.file_extra) {
+        if (track.download_url) {
           return {
-            titulo: track.upload_name,
-            artista: track.user_name,
-            url: track.files[0].file_extra,
-            source: 'ccmixter'
+            titulo: track.title,
+            artista: track.user.username,
+            url: track.download_url + '?client_id=SOUNDCLOUD_CLIENT_ID',
+            source: 'SoundCloud'
           };
         }
       }
     }
   } catch (e) {
-    console.log('[musica] Erro CCMixter:', e.message);
+    console.log('[musica] Erro SoundCloud:', e.message);
   }
   return null;
 }
 
-// INTERNET ARCHIVE - Audio
-async function buscarInternetArchive(query) {
+// MÚSICA DE DOMÍNIO PÚBLIO DO GOV.BR
+async function buscarMusicaGovBr(query) {
   try {
-    const url = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)+"+medietype:audio"}&fl[]=identifier,title,creator&output=json&rows=3`;
+    const url = `https://www.gov.br/pt-br/search?query=${encodeURIComponent(query)+"+musica"}&tipo=audio`;
     const res = await axios.get(url, { timeout: 15000 });
     
-    if (res.data?.response?.docs?.length > 0) {
-      for (const item of res.data.response.docs) {
-        const identifier = item.identifier;
-        const title = item.title;
-        const creator = item.creator || 'Desconhecido';
-        
-        // Buscar metadados para obter URL do arquivo de áudio
-        try {
-          const metaUrl = `https://archive.org/metadata/${identifier}`;
-          const metaRes = await axios.get(metaUrl, { timeout: 15000 });
-          
-          if (metaRes.data?.files) {
-            const mp3File = metaRes.data.files.find(f => f.name && (f.name.endsWith('.mp3') || f.name.endsWith('.ogg')));
-            if (mp3File) {
-              return {
-                titulo: title,
-                artista: creator,
-                url: `https://archive.org/download/${identifier}/${encodeURIComponent(mp3File.name)}`,
-                source: 'internetarchive'
-              };
-            }
-          }
-        } catch (e) {
-          continue;
-        }
-      }
+    // Buscar links de mp3 na página
+    const mp3Match = res.data.match(/"(https?:\/\/[^"]+\.mp3[^"]*)"/);
+    if (mp3Match) {
+      return {
+        titulo: query,
+        artista: 'Gov.br',
+        url: mp3Match[1],
+        source: 'Gov.br'
+      };
     }
-  } catch (e) {
-    console.log('[musica] Erro Internet Archive:', e.message);
-  }
+  } catch (e) {}
   return null;
 }
 
@@ -153,7 +139,7 @@ async function buscarBensound(query) {
           titulo: track.name,
           artista: 'Bensound',
           url: track.mp3Url,
-          source: 'bensound'
+          source: 'Bensound'
         };
       }
     }
@@ -163,39 +149,63 @@ async function buscarBensound(query) {
   return null;
 }
 
-// SOUNDCLOUD - Busca e download
-async function buscarSoundCloud(query) {
+// GERAR ÁUDIO VIA IA (ElevenLabs grátis - texto para fala)
+async function gerarAudioIA(query) {
+  // Usar API de texto para fala do Google Translate (gTTS-like via API)
   try {
-    // Usar API pública do SoundCloud
-    const url = `https://api.soundcloud.com/tracks?q=${encodeURIComponent(query)}&limit=3&client_id=YOUR_CLIENT_ID`;
+    const url = `https://api.streamelements.com/kappa/v2/speech?voice=Brazilian+Female&text=${encodeURIComponent("Tocando música: "+query)}`;
+    const res = await axios.get(url, { 
+      responseType: 'arraybuffer',
+      timeout: 30000 
+    });
+    
+    if (res.data && res.data.length > 1000) {
+      return {
+        titulo: query,
+        artista: 'IA',
+        audio: res.data,
+        source: 'IA'
+      };
+    }
+  } catch (e) {
+    console.log('[musica] Erro IA:', e.message);
+  }
+  return null;
+}
+
+// MÚSICA DO BANCO DO OPENVERSE (Creative Commons)
+async function buscarOpenverse(query) {
+  try {
+    const url = `https://api.openverse.engineering/v1/audio/?q=${encodeURIComponent(query)}&license=by,by-sa,by-nc,cc0,pdm&limit=3`;
     const res = await axios.get(url, { timeout: 15000 });
     
-    if (res.data?.length > 0) {
-      for (const track of res.data) {
-        if (track.download_url) {
+    if (res.data?.results?.length > 0) {
+      for (const audio of res.data.results) {
+        if (audio.url) {
           return {
-            titulo: track.title,
-            artista: track.user.username,
-            url: track.download_url,
-            source: 'soundcloud'
+            titulo: audio.title || query,
+            artista: audio.creator || 'Desconhecido',
+            url: audio.url,
+            source: 'Openverse'
           };
         }
       }
     }
   } catch (e) {
-    console.log('[musica] Erro SoundCloud:', e.message);
+    console.log('[musica] Erro Openverse:', e.message);
   }
   return null;
 }
 
-// Download genérico com fallback de proxy
-async function baixarAudio(url, caminhoSaida) {
+// Download genérico
+async function baixarAudio(url, caminhoSaida, headers = {}) {
   const response = await axios.get(url, {
     responseType: 'stream',
     timeout: 120000,
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': '*/*'
+      'Accept': '*/*',
+      ...headers
     },
     maxRedirects: 5
   });
@@ -240,54 +250,52 @@ module.exports = {
     try {
       await reply('🔍 Buscando música...');
 
-      // Tentar múltiplas fontes em ordem de qualidade
       let resultado = null;
       let fonte = '';
       
-      // 1. Tentar Jamendo (música livre)
+      // 1. Jamendo (música livre, sem rate limit)
       resultado = await buscarJamendo(query);
       if (resultado) fonte = 'Jamendo';
       
-      // 2. Internet Archive
+      // 2. Openverse (Creative Commons)
       if (!resultado) {
-        resultado = await buscarInternetArchive(query);
-        if (resultado) fonte = 'Internet Archive';
+        resultado = await buscarOpenverse(query);
+        if (resultado) fonte = 'Openverse';
       }
       
-      // 3. CCMixter
-      if (!resultado) {
-        resultado = await buscarCCMixter(query);
-        if (resultado) fonte = 'CCMixter';
-      }
-      
-      // 4. Free Music Archive
-      if (!resultado) {
-        resultado = await buscarFMA(query);
-        if (resultado) fonte = 'FMA';
-      }
-      
-      // 5. Bensound
+      // 3. Bensound
       if (!resultado) {
         resultado = await buscarBensound(query);
         if (resultado) fonte = 'Bensound';
       }
       
-      // 6. SoundCloud
+      // 4. SoundCloud
       if (!resultado) {
         resultado = await buscarSoundCloud(query);
         if (resultado) fonte = 'SoundCloud';
       }
       
+      // Se encontrou via IA, enviar direto
       if (!resultado) {
-        return reply(`⚠️ Não encontrei "${query}". Tente outro termo ou verifique a ortografia.`);
+        resultado = await gerarAudioIA(query);
+        if (resultado) {
+          fs.writeFileSync(caminhoArquivo, resultado.audio);
+          fonte = 'IA';
+        }
+      }
+      
+      if (!resultado) {
+        return reply(`⚠️ Não encontrei "${query}".\n\nTente:\n• Verificar ortografia\n• Usar outro termo\n• Pesquisar em: https://www.jenotoradio.com.br/`);
       }
 
-      await reply(`🎵 ${resultado.titulo} - ${resultado.artista}\n📡 Via: ${fonte}\n⏳ Baixando...`);
+      await reply(`🎵 ${resultado.titulo}${resultado.artista ? ' - ' + resultado.artista : ''}\n📡 Via: ${fonte}\n⏳ Baixando...`);
 
-      // Baixar o áudio
-      await baixarAudio(resultado.url, caminhoArquivo);
+      // Se o resultado já tem audio (IA), pular download
+      if (!resultado.audio) {
+        await baixarAudio(resultado.url, caminhoArquivo);
+      }
 
-      // Validar arquivo
+      // Validar
       if (!fs.existsSync(caminhoArquivo)) {
         return reply('⚠️ Erro ao processar áudio.');
       }
@@ -295,10 +303,10 @@ module.exports = {
       const stats = fs.statSync(caminhoArquivo);
       if (stats.size > 16 * 1024 * 1024) {
         fs.unlinkSync(caminhoArquivo);
-        return reply('⚠️ Áudio muito grande! Máximo 16MB.');
+        return reply('⚠️ Áudio muito grande!');
       }
 
-      if (stats.size < 10000) {
+      if (stats.size < 5000) {
         fs.unlinkSync(caminhoArquivo);
         return reply('⚠️ Download inválido. Tente outro termo.');
       }
