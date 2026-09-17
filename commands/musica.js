@@ -21,38 +21,114 @@ function limparAntigos() {
   } catch (e) {}
 }
 
-// DEEZER API - Sem rate limit, sempre funciona
+// DEEZER API - Busca robusta
 async function buscarDeezer(query) {
-  try {
-    const url = `https://api.deezer.com/search?q=${encodeURIComponent(query)}&limit=10&output=jsonp`;
-    const res = await axios.get(url, {
-      timeout: 15000,
-      responseType: 'text'
-    });
-    
-    let jsonStr = res.data;
-    const match = jsonStr.match(/jsonp_\d+\((.*)\)/s);
-    if (match) jsonStr = match[1];
-    
-    const data = JSON.parse(jsonStr);
-    
-    if (data.data?.length > 0) {
-      for (const track of data.data) {
-        if (track.preview) {
-          return {
-            titulo: track.title,
-            artista: track.artist.name,
-            album: track.album?.title || '',
-            preview: track.preview,
-            link: track.link,
-            duracao: track.duration
-          };
+  const urls = [
+    `https://api.deezer.com/search?q=${encodeURIComponent(query)}&limit=10`,
+    `https://api.deezer.com/search?q=${encodeURIComponent(query)}&limit=10&output=jsonp`,
+    `https://api.deezer.com/artist/${encodeURIComponent(query)}/top?limit=5`,
+  ];
+  
+  for (const url of urls) {
+    try {
+      const res = await axios.get(url, {
+        timeout: 15000,
+        responseType: 'text'
+      });
+      
+      let jsonStr = res.data;
+      
+      // Tentar extrair JSON do JSONP
+      const jsonpMatch = jsonStr.match(/jsonp_\d+\((.*)\)/s);
+      if (jsonpMatch) {
+        jsonStr = jsonpMatch[1];
+      }
+      
+      // Tentar parsear
+      let data;
+      try {
+        data = JSON.parse(jsonStr);
+      } catch (e) {
+        // Se falhar, tentar limpar caracteres de controle
+        jsonStr = jsonStr.replace(/[\\x00-\\x1F\\x7F]/g, '');
+        data = JSON.parse(jsonStr);
+      }
+      
+      // Formato com data[]
+      if (data.data?.length > 0) {
+        for (const track of data.data) {
+          if (track.preview) {
+            return {
+              titulo: track.title,
+              artista: track.artist?.name || 'Desconhecido',
+              album: track.album?.title || '',
+              preview: track.preview,
+              link: track.link,
+              duracao: track.duration
+            };
+          }
         }
       }
+      
+      // Formato de array direto
+      if (Array.isArray(data) && data.length > 0) {
+        for (const track of data) {
+          if (track.preview) {
+            return {
+              titulo: track.title,
+              artista: track.artist?.name || 'Desconhecido',
+              album: track.album?.title || '',
+              preview: track.preview,
+              link: track.link,
+              duracao: track.duration
+            };
+          }
+        }
+      }
+      
+    } catch (e) {
+      console.log(`[musica] Deezer URL falhou:`, e.message);
+      continue;
     }
-  } catch (e) {
-    console.log('[musica] Erro Deezer:', e.message);
   }
+  
+  // Segunda tentativa: buscar por partes
+  const partes = query.split(' ').filter(p => p.length > 2);
+  if (partes.length > 1) {
+    for (const parte of partes) {
+      try {
+        const url = `https://api.deezer.com/search?q=${encodeURIComponent(parte)}&limit=5`;
+        const res = await axios.get(url, {
+          timeout: 15000,
+          responseType: 'text'
+        });
+        
+        let jsonStr = res.data;
+        const jsonpMatch = jsonStr.match(/jsonp_\d+\((.*)\)/s);
+        if (jsonpMatch) jsonStr = jsonpMatch[1];
+        
+        const data = JSON.parse(jsonStr);
+        
+        if (data.data?.length > 0) {
+          for (const track of data.data) {
+            if (track.preview) {
+              return {
+                titulo: track.title,
+                artista: track.artist?.name || 'Desconhecido',
+                album: track.album?.title || '',
+                preview: track.preview,
+                link: track.link,
+                duracao: track.duration
+              };
+            }
+          }
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+  }
+  
   return null;
 }
 
@@ -94,7 +170,7 @@ module.exports = {
     const query = args.join(' ');
     
     if (!query) {
-      return reply('🎵 Use: #musica <nome da música>\nExemplo:\n#musica Asa - Bebê\n#musica Matuê');
+      return reply('🎵 Use: #musica <nome da música>\nExemplo:\n#musica Asa - Bebê\n#musica MC Kevin');
     }
 
     limparAntigos();
