@@ -1,7 +1,6 @@
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
 
 const DOWNLOAD_DIR = path.join(__dirname, '..', 'temp', 'music');
 
@@ -12,8 +11,7 @@ if (!fs.existsSync(DOWNLOAD_DIR)) {
 function limparAntigos() {
   try {
     const agora = Date.now();
-    const arquivos = fs.readdirSync(DOWNLOAD_DIR);
-    arquivos.forEach(arq => {
+    fs.readdirSync(DOWNLOAD_DIR).forEach(arq => {
       const caminho = path.join(DOWNLOAD_DIR, arq);
       const stat = fs.statSync(caminho);
       if (agora - stat.mtimeMs > 15 * 60 * 1000) {
@@ -21,166 +19,6 @@ function limparAntigos() {
       }
     });
   } catch (e) {}
-}
-
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-async function buscarYTApi(query) {
-  const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
-  if (!YOUTUBE_API_KEY) return null;
-  
-  try {
-    const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=5&key=${YOUTUBE_API_KEY}`;
-    const res = await axios.get(url, { timeout: 10000 });
-    
-    if (res.data?.items?.length > 0) {
-      for (const item of res.data.items) {
-        const videoId = item.id.videoId;
-        const titulo = item.snippet.title;
-        
-        let duracaoMs = 0;
-        try {
-          const urlDet = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`;
-          const resDet = await axios.get(urlDet, { timeout: 10000 });
-          if (resDet.data?.items?.[0]) {
-            duracaoMs = parseDuration(resDet.data.items[0].contentDetails.duration);
-          }
-        } catch (e) {}
-        
-        if (duracaoMs < 8 * 60 * 1000) {
-          return { videoId, titulo, duracaoMs };
-        }
-      }
-    }
-  } catch (e) {
-    console.log('[musica] Erro YT API:', e.message);
-  }
-  return null;
-}
-
-async function buscarYTScrape(query) {
-  try {
-    const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
-    const res = await axios.get(url, {
-      timeout: 10000,
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-    });
-    
-    const match = res.data.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
-    if (match) {
-      const videoId = match[1];
-      const titleMatch = res.data.match(/"title":{"runs":\[{"text":"([^"]+)"/);
-      return { videoId, titulo: titleMatch ? titleMatch[1] : query, duracaoMs: 0 };
-    }
-  } catch (e) {}
-  return null;
-}
-
-async function baixarYT(urlVideo, caminhoSaida) {
-  try {
-    const ytdl = require('@distube/ytdl-core');
-    
-    const info = await ytdl.getInfo(urlVideo);
-    
-    // Filtrar formatos de áudio válidos (não HLS, não live)
-    const formatos = info.formats.filter(f => {
-      return f.hasAudio && !f.hasVideo && 
-             !f.url.includes('hls') && 
-             !info.videoDetails.isLiveContent &&
-             f.contentLength && parseInt(f.contentLength) < 15 * 1024 * 1024;
-    });
-    
-    if (formatos.length === 0) {
-      // Se não formato válido, tentar direto
-      const stream = ytdl(urlVideo, {
-        quality: 'lowestaudio',
-        filter: 'audioonly'
-      });
-      
-      const writeStream = fs.createWriteStream(caminhoSaida);
-      let totalSize = 0;
-      
-      stream.on('data', (chunk) => {
-        totalSize += chunk.length;
-        if (totalSize > 15 * 1024 * 1024) stream.destroy();
-      });
-      
-      return new Promise((resolve, reject) => {
-        stream.pipe(writeStream);
-        writeStream.on('finish', resolve);
-        writeStream.on('error', reject);
-        stream.on('error', reject);
-      });
-    }
-    
-    // Melhor formato de áudio
-    const melhor = formatos.sort((a, b) => {
-      const aSize = parseInt(a.contentLength || 0);
-      const bSize = parseInt(b.contentLength || 0);
-      return bSize - aSize;
-    })[0];
-    
-    if (!melhor?.url) throw new Error('Sem URL válida');
-    
-    // Download direto via axios
-    const response = await axios.get(melhor.url, {
-      responseType: 'stream',
-      timeout: 60000
-    });
-    
-    const writer = fs.createWriteStream(caminhoSaida);
-    response.data.pipe(writer);
-    
-    return new Promise((resolve, reject) => {
-      writer.on('finish', resolve);
-      writer.on('error', reject);
-    });
-    
-  } catch (e) {
-    throw e;
-  }
-}
-
-async function buscarDeezer(query) {
-  try {
-    const url = `https://api.deezer.com/search?q=${encodeURIComponent(query)}&limit=3`;
-    const res = await axios.get(url, { timeout: 10000 });
-    
-    if (res.data?.data?.length > 0) {
-      for (const track of res.data.data) {
-        if (track.preview) {
-          return {
-            id: track.id,
-            titulo: track.title,
-            artista: track.artist.name,
-            preview: track.preview,
-            link: track.link,
-            source: 'deezer'
-          };
-        }
-      }
-    }
-  } catch (e) {
-    console.log('[musica] Erro Deezer:', e.message);
-  }
-  return null;
-}
-
-async function baixarDeezer(url, caminhoSaida) {
-  const response = await axios.get(url, {
-    responseType: 'stream',
-    timeout: 30000
-  });
-  
-  const writer = fs.createWriteStream(caminhoSaida);
-  response.data.pipe(writer);
-  
-  return new Promise((resolve, reject) => {
-    writer.on('finish', resolve);
-    writer.on('error', reject);
-  });
 }
 
 module.exports = {
@@ -192,7 +30,7 @@ module.exports = {
     const query = args.join(' ');
     
     if (!query) {
-      return reply('⚠️ Use: #musica <nome da música>\nExemplo:\n#musica Asa - Bebê');
+      return reply('🎵 Use: #musica <nome da música>\nExemplo:\n#musica Asa - Bebê\n#musica Matuê - Somos Iguais');
     }
 
     limparAntigos();
@@ -201,139 +39,206 @@ module.exports = {
     const caminhoArquivo = path.join(DOWNLOAD_DIR, nomeArquivo);
 
     try {
-      await reply('🔍 Buscando...');
+      await reply('🔍 Buscando música...');
 
-      // 1. Buscar no YouTube
-      let resultado = await buscarYTApi(query) || await buscarYTScrape(query);
-      
-      if (!resultado) {
-        return reply(`⚠️ Não encontrei "${query}"`);
+      // 1. Buscar vídeo no YouTube para obter ID
+      const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
+      let videoId = null;
+      let titulo = query;
+
+      if (YOUTUBE_API_KEY) {
+        try {
+          const urlBusca = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=3&key=${YOUTUBE_API_KEY}`;
+          const resBusca = await axios.get(urlBusca, { timeout: 10000 });
+          
+          if (resBusca.data?.items?.length > 0) {
+            videoId = resBusca.data.items[0].id.videoId;
+            titulo = resBusca.data.items[0].snippet.title;
+          }
+        } catch (e) {
+          console.log('[musica] Erro busca YouTube:', e.message);
+        }
       }
 
-      const { videoId, titulo, duracaoMs } = resultado;
+      // Fallback: scrape do YouTube
+      if (!videoId) {
+        try {
+          const urlScrape = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+          const resScrape = await axios.get(urlScrape, {
+            timeout: 10000,
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+          });
+          
+          const match = resScrape.data.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
+          if (match) {
+            videoId = match[1];
+            const titleMatch = resScrape.data.match(/"title":{"runs":\[{"text":"([^"]+)"/);
+            if (titleMatch) titulo = titleMatch[1];
+          }
+        } catch (e) {}
+      }
 
-      if (duracaoMs > 8 * 60 * 1000) {
-        return reply('⚠️ Música muito longa! Máx. 8 minutos.');
+      if (!videoId) {
+        return reply(`⚠️ Não encontrei "${query}"`);
       }
 
       await reply(`🎵 ${titulo}\n⏳ Baixando...`);
 
       const urlVideo = `https://www.youtube.com/watch?v=${videoId}`;
       
-      // 2. Tentar baixar do YouTube (música completa)
-      let sucesso = false;
-      let erro = null;
+      // 2. Usar Cobalt API para obter URL de download direto
+      const cobaltUrls = [
+        'https://api.cobalt.tools/api/json',
+        'https://coapi.me/api/json',
+        'https://api.cobalt.media/api/json'
+      ];
       
-      for (let i = 0; i < 3 && !sucesso; i++) {
+      let downloadUrl = null;
+      let downloadFilename = null;
+      
+      for (const cobaltUrl of cobaltUrls) {
         try {
-          await baixarYT(urlVideo, caminhoArquivo);
-          sucesso = true;
-        } catch (e) {
-          erro = e;
-          console.log(`[musica] Tentativa ${i+1} falhou:`, e.message);
+          const res = await axios.post(cobaltUrl, {
+            url: urlVideo,
+            audioFormat: 'mp3',
+            isAudioOnly: true,
+            filenameStyle: 'pretty'
+          }, {
+            timeout: 60000,
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+              'User-Agent': 'Mozilla/5.0'
+            }
+          });
           
-          if (e.message?.includes('429') || e.statusCode === 429) {
-            await reply(`⚠️ Tentativa ${i+1}/3 - YouTube limitou. Aguardando...`);
-            await delay(15000 * (i + 1));
-          } else if (e.message?.includes('too_large')) {
+          if (res.data?.url) {
+            downloadUrl = res.data.url;
+            downloadFilename = res.data.filename || `${titulo}.mp3`;
             break;
           }
+        } catch (e) {
+          console.log(`[musica] Cobalt ${cobaltUrl} falhou:`, e.message);
+          continue;
         }
       }
       
-      // 3. Verificar se o arquivo é válido (não é o preview de 30s)
-      if (sucesso && fs.existsSync(caminhoArquivo)) {
-        const stats = fs.statSync(caminhoArquivo);
-        
-        // Se o arquivo é muito pequeno (menos de 50KB), provavelmente é só o preview
-        if (stats.size < 50000 && duracaoMs > 60000) {
-          sucesso = false;
-          erro = new Error('Arquivo muito pequeno');
-        }
-      }
-      
-      // 4. Fallback: Deezer se YouTube falhar
-      if (!sucesso) {
-        console.log('[musica] YouTube falhou, tentando Deezer');
-        
-        const deezer = await buscarDeezer(query);
-        
-        if (deezer?.preview) {
-          await reply(`🎵 Deezer: ${deezer.titulo}\n⏳ Enviando...`);
-          
-          try {
-            await baixarDeezer(deezer.preview, caminhoArquivo);
-            
-            if (fs.existsSync(caminhoArquivo) && fs.statSync(caminhoArquivo).size > 1000) {
-              await sock.sendMessage(groupId, {
-                audio: fs.readFileSync(caminhoArquivo),
-                mimetype: 'audio/mpeg',
-                fileName: `${deezer.titulo}.mp3`,
-                ptt: false
-              }, { quoted: msg });
-              
-              try { fs.unlinkSync(caminhoArquivo); } catch (e) {}
-              return;
+      // 3. Fallback: usar savevid.io se Cobalt falhar
+      if (!downloadUrl) {
+        try {
+          const saveVidRes = await axios.post('https://api.savevid.io/v1/fetch', {
+            url: urlVideo
+          }, {
+            timeout: 60000,
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
             }
-          } catch (e) {
-            console.log('[musica] Deezer falhou:', e.message);
+          });
+          
+          if (saveVidRes.data?.downloads?.mp3) {
+            downloadUrl = saveVidRes.data.downloads.mp3.url;
+            downloadFilename = `${titulo}.mp3`;
           }
+        } catch (e) {
+          console.log('[musica] Savevid falhou:', e.message);
         }
-        
-        // 5. Enviar link como último recurso
-        if (deezer) {
-          return reply(`🎵 *${deezer.titulo}*\n🔗 Ouça: ${deezer.link}\n\n_⚠️ Download indisponível_`);
+      }
+      
+      // 4. Fallback final: tentar ytdl-core diretamente
+      if (!downloadUrl) {
+        try {
+          const ytdl = require('@distube/ytdl-core');
+          const info = await ytdl.getInfo(urlVideo);
+          
+          const formatos = info.formats.filter(f => 
+            f.hasAudio && !f.hasVideo && f.contentLength && 
+            parseInt(f.contentLength) < 15 * 1024 * 1024
+          );
+          
+          if (formatos.length > 0) {
+            const melhor = formatos.sort((a, b) => 
+              parseInt(b.contentLength || 0) - parseInt(a.contentLength || 0)
+            )[0];
+            
+            if (melhor?.url) {
+              downloadUrl = melhor.url;
+              downloadFilename = `${titulo}.mp3`;
+            }
+          }
+        } catch (e) {
+          console.log('[musica] ytdl-core falhou:', e.message);
         }
-        
-        if (erro?.message?.includes('429') || erro?.statusCode === 429) {
-          return reply('⚠️ YouTube limitou. Tente em 5-10 min.');
-        }
-        
-        return reply('⚠️ Erro ao baixar. Tente outro termo.');
+      }
+      
+      if (!downloadUrl) {
+        return reply('⚠️ Não foi possível baixar. O YouTube está limitando requisições. Tente em alguns minutos ou use outro termo.');
       }
 
-      // Enviar música do YouTube
-      let arquivoFinal = caminhoArquivo;
+      // 5. Baixar o áudio
+      const downloadRes = await axios.get(downloadUrl, {
+        responseType: 'stream',
+        timeout: 120000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Referer': 'https://www.youtube.com/'
+        },
+        maxRedirects: 5
+      });
+
+      const writer = fs.createWriteStream(caminhoArquivo);
+      
+      let totalSize = 0;
+      downloadRes.data.on('data', (chunk) => {
+        totalSize += chunk.length;
+        if (totalSize > 16 * 1024 * 1024) {
+          downloadRes.data.destroy();
+          writer.destroy();
+        }
+      });
+      
+      downloadRes.data.pipe(writer);
+      
+      await new Promise((resolve, reject) => {
+        writer.on('finish', resolve);
+        writer.on('error', reject);
+        downloadRes.data.on('error', reject);
+      });
+
+      // 6. Validar e enviar
       if (!fs.existsSync(caminhoArquivo)) {
-        const arquivos = fs.readdirSync(DOWNLOAD_DIR);
-        const mp3 = arquivos.find(f => f.endsWith('.mp3'));
-        if (mp3) arquivoFinal = path.join(DOWNLOAD_DIR, mp3);
-      }
-
-      if (!fs.existsSync(arquivoFinal)) {
         return reply('⚠️ Erro ao processar áudio.');
       }
 
-      const stats = fs.statSync(arquivoFinal);
+      const stats = fs.statSync(caminhoArquivo);
       if (stats.size > 16 * 1024 * 1024) {
-        fs.unlinkSync(arquivoFinal);
-        return reply('⚠️ Áudio muito grande!');
+        fs.unlinkSync(caminhoArquivo);
+        return reply('⚠️ Áudio muito grande! Máximo 16MB.');
       }
 
-      if (stats.size < 5000) {
-        fs.unlinkSync(arquivoFinal);
-        return reply('⚠️ Download falhou. Tente novamente.');
+      if (stats.size < 10000) {
+        fs.unlinkSync(caminhoArquivo);
+        return reply('⚠️ Download inválido. Tente outro termo.');
       }
 
       await sock.sendMessage(groupId, {
-        audio: fs.readFileSync(arquivoFinal),
+        audio: fs.readFileSync(caminhoArquivo),
         mimetype: 'audio/mpeg',
-        fileName: `${titulo}.mp3`,
+        fileName: downloadFilename || `${titulo}.mp3`,
         ptt: false
       }, { quoted: msg });
 
-      try { fs.unlinkSync(arquivoFinal); } catch (e) {}
+      try { fs.unlinkSync(caminhoArquivo); } catch (e) {}
 
     } catch (err) {
       console.error('[musica] Erro:', err.message);
       try { fs.unlinkSync(caminhoArquivo); } catch (e) {}
-      return reply('⚠️ Erro. Tente novamente.');
+      
+      if (err.message.includes('429')) {
+        return reply('⚠️ YouTube limitou. Tente em 5-10 min.');
+      }
+      
+      return reply('⚠️ Erro ao baixar música. Tente novamente.');
     }
   }
 };
-
-function parseDuration(duration) {
-  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-  if (!match) return 0;
-  return (parseInt(match[1] || 0) * 3600 + parseInt(match[2] || 0) * 60 + parseInt(match[3] || 0)) * 1000;
-}
