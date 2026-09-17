@@ -25,52 +25,51 @@ module.exports = {
         });
         
         const jogosAoVivo = res.data || [];
-        const timeLower = time.toLowerCase();
         
-        // Filtrar jogos do time
-        const jogosFiltrados = jogosAoVivo.filter(jogo => {
-          const casa = (jogo.time_mandante?.nome_popular || '').toLowerCase();
-          const fora = (jogo.time_visitante?.nome_popular || '').toLowerCase();
-          return casa.includes(timeLower) || fora.includes(timeLower);
-        });
-        
-        if (jogosFiltrados.length > 0) {
-          let texto = `⚽ *Placar ao Vivo*\n\n`;
-          jogosFiltrados.forEach(jogo => {
-            const timeCasa = jogo.time_mandante?.nome_popular || 'Casa';
-            const timeFora = jogo.time_visitante?.nome_popular || 'Fora';
-            const placarCasa = jogo.placar_mandante ?? 0;
-            const placarFora = jogo.placar_visitante ?? 0;
-            const status = jogo.status || 'Em andamento';
-            const estadio = jogo.estadio?.nome || '';
-            
-            texto += `🏟️ ${timeCasa} ${placarCasa} x ${placarFora} ${timeFora}\n`;
-            texto += `📍 ${estadio}\n`;
-            texto += `📊 ${status}\n\n`;
+        if (jogosAoVivo.length > 0) {
+          const timeLower = time.toLowerCase();
+          const jogosFiltrados = jogosAoVivo.filter(jogo => {
+            const casa = (jogo.time_mandante?.nome_popular || '').toLowerCase();
+            const fora = (jogo.time_visitante?.nome_popular || '').toLowerCase();
+            return casa.includes(timeLower) || fora.includes(timeLower);
           });
-          return await sock.sendMessage(groupId, { text: texto });
+          
+          if (jogosFiltrados.length > 0) {
+            let texto = `⚽ *Placar ao Vivo*\n\n`;
+            jogosFiltrados.forEach(jogo => {
+              const timeCasa = jogo.time_mandante?.nome_popular || 'Casa';
+              const timeFora = jogo.time_visitante?.nome_popular || 'Fora';
+              const placarCasa = jogo.placar_mandante ?? 0;
+              const placarFora = jogo.placar_visitante ?? 0;
+              const status = jogo.status || 'Em andamento';
+              texto += `🏟️ ${timeCasa} ${placarCasa} x ${placarFora} ${timeFora}\n`;
+              texto += `📊 ${status}\n\n`;
+            });
+            return await sock.sendMessage(groupId, { text: texto });
+          }
         }
       } catch (err) {
-        console.log('[placar] API Futebol indisponível, usando Gemini');
+        console.log('[placar] API Futebol indisponível');
       }
 
-      // 2. Fallback: usar Gemini
-      const prompt = `Busque na internet o placar mais recente do time "${time}". 
+      // 2. Fallback: usar Gemini com prompt mais específico
+      const prompt = `Você é um assistente de futebol. O usuário quer saber o placar do time "${time}".
 
-Procure por:
-- Placar de jogos ao vivo ou recentes
-- Campeonato e data
-- Status do jogo (ao vivo, encerrado, etc)
+IMPORTANTE: O jogo do ${time} ESTÁ ACONTECENDO AGORA ou aconteceu recentemente.
 
-Formato da resposta:
-⚽ [Time Casa] [Placar] x [Placar] [Time Fora]
-📅 [Data/Hora]
-🏆 [Campeonato]
-📊 [Status]
+Faça o seguinte:
+1. Busque na internet o placar mais recente do time "${time}"
+2. Se encontrar, retorne no formato:
+   ⚽ [Time Casa] [Placar] x [Placar] [Time Fora]
+   📅 [Data/Hora]
+   🏆 [Campeonato]
+   📊 [Status: ao vivo/encerrado]
 
-Se não encontrar informações recentes, responda: "Não encontrei jogos recentes para [time]. Tente novamente mais tarde."
+3. Se NÃO encontrar, tente buscar por nomes alternativos do time (ex: "Corinthians" pode ser "Timão", "Flamengo" pode ser "Mengão")
 
-Responda APENAS com as informações do placar, sem textos adicionais. Em Português-BR.`;
+4. Se ainda assim não encontrar, responda: "Não encontrei o placar do ${time}. O jogo pode não estar acontecendo agora."
+
+Responda APENAS com as informações do placar. Em Português-BR.`;
 
       const urlGemini = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
       
