@@ -24,6 +24,9 @@ async function runModeration(sock, msg, groupId, senderId, messageType, textCont
   
   for (const mutado of listaMutados) {
     if (mutado.includes(senderIdSemHost)) {
+      // Admins podem falar mesmo mutados
+      if (senderIsAdmin) break;
+      
       try {
         await sock.sendMessage(groupId, { delete: msg.key });
       } catch (err) {}
