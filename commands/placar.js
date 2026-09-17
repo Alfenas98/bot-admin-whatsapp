@@ -12,85 +12,55 @@ module.exports = {
     const time = args.join(' ');
     
     if (!time) {
-      return reply('⚠️ Use: #placar <time>\nExemplo:\n#placar Corinthians\n#placar Flamengo\n#placar Palmeiras');
+      return reply('⚠️ Use: #placar <time>\nExemplo:\n#placar Corinthians\n#placar Flamengo');
     }
 
     try {
-      // Buscar jogos ao vivo (API Futebol Brasil)
-      const url = `${BASE_URL}/ao-vivo`;
-      const res = await axios.get(url, {
-        timeout: 15000,
-        headers: {
-          'Authorization': `Bearer ${API_KEY}`,
-          'Content-Type': 'application/json'
+      // 1. Tentar API Futebol (apenas /ao-vivo funciona no plano gratuito)
+      try {
+        const url = `${BASE_URL}/ao-vivo`;
+        const res = await axios.get(url, {
+          timeout: 10000,
+          headers: { 'Authorization': `Bearer ${API_KEY}` }
+        });
+        
+        const jogosAoVivo = res.data || [];
+        const timeLower = time.toLowerCase();
+        
+        // Filtrar jogos do time
+        const jogosFiltrados = jogosAoVivo.filter(jogo => {
+          const casa = (jogo.time_mandante?.nome_popular || '').toLowerCase();
+          const fora = (jogo.time_visitante?.nome_popular || '').toLowerCase();
+          return casa.includes(timeLower) || fora.includes(timeLower);
+        });
+        
+        if (jogosFiltrados.length > 0) {
+          let texto = `⚽ *Placar ao Vivo*\n\n`;
+          jogosFiltrados.forEach(jogo => {
+            const timeCasa = jogo.time_mandante?.nome_popular || 'Casa';
+            const timeFora = jogo.time_visitante?.nome_popular || 'Fora';
+            const placarCasa = jogo.placar_mandante ?? 0;
+            const placarFora = jogo.placar_visitante ?? 0;
+            const status = jogo.status || 'Em andamento';
+            const estadio = jogo.estadio?.nome || '';
+            
+            texto += `🏟️ ${timeCasa} ${placarCasa} x ${placarFora} ${timeFora}\n`;
+            texto += `📍 ${estadio}\n`;
+            texto += `📊 ${status}\n\n`;
+          });
+          return await sock.sendMessage(groupId, { text: texto });
         }
-      });
-      
-      const jogosAoVivo = res.data || [];
-      
-      // Filtrar jogos do time pesquisado (busca por nome popular ou slug)
-      const timeLower = time.toLowerCase();
-      const jogosFiltrados = jogosAoVivo.filter(jogo => {
-        const casa = (jogo.time_mandante?.nome_popular || '').toLowerCase();
-        const fora = (jogo.time_visitante?.nome_popular || '').toLowerCase();
-        const slugCasa = (jogo.time_mandante?.slug || '').toLowerCase();
-        const slugFora = (jogo.time_visitante?.slug || '').toLowerCase();
-        return casa.includes(timeLower) || fora.includes(timeLower) ||
-               slugCasa.includes(timeLower) || slugFora.includes(timeLower);
-      });
-      
-      // Se encontrou jogo ao vivo
-      if (jogosFiltrados.length > 0) {
-        let texto = `⚽ *Placar ao Vivo*\n\n`;
-        
-        jogosFiltrados.forEach(jogo => {
-          const timeCasa = jogo.time_mandante?.nome_popular || 'Casa';
-          const timeFora = jogo.time_visitante?.nome_popular || 'Fora';
-          const placarCasa = jogo.placar_mandante ?? 0;
-          const placarFora = jogo.placar_visitante ?? 0;
-          const status = jogo.status || 'Em andamento';
-          const estadio = jogo.estadio?.nome || '';
-          
-          texto += `🏟️ ${timeCasa} ${placarCasa} x ${placarFora} ${timeFora}\n`;
-          texto += `📍 ${estadio}\n`;
-          texto += `📊 ${status}\n\n`;
-        });
-        
-        return await sock.sendMessage(groupId, { text: texto });
+      } catch (err) {
+        console.log('[placar] API Futebol indisponível, usando Gemini');
       }
-      
-      // Se não tem ao vivo, buscar próximos jogos
-      const urlProximos = `${BASE_URL}/campeonatos/10/jogos`;
-      const resProximos = await axios.get(urlProximos, {
-        timeout: 15000,
-        headers: { 'Authorization': `Bearer ${API_KEY}` }
-      });
-      
-      const proximos = (resProximos.data || []).filter(jogo => {
-        const casa = (jogo.time_mandante?.nome_popular || '').toLowerCase();
-        const fora = (jogo.time_visitante?.nome_popular || '').toLowerCase();
-        return casa.includes(timeLower) || fora.includes(timeLower);
-      }).slice(0, 3);
-      
-      if (proximos.length > 0) {
-        let texto = `📅 *Próximos Jogos*\n\n`;
-        
-        proximos.forEach(jogo => {
-          const timeCasa = jogo.time_mandante?.nome_popular || 'Casa';
-          const timeFora = jogo.time_visitante?.nome_popular || 'Fora';
-          const data = jogo.data_realizacao 
-            ? new Date(jogo.data_realizacao).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
-            : 'Data a definir';
-          
-          texto += `🏟️ ${timeCasa} vs ${timeFora}\n`;
-          texto += `📅 ${data}\n\n`;
-        });
-        
-        return await sock.sendMessage(groupId, { text: texto });
-      }
-      
-      // Fallback: usar Gemini
+
+      // 2. Fallback: usar Gemini
       const prompt = `Busque na internet o placar mais recente do time "${time}". 
+
+Procure por:
+- Placar de jogos ao vivo ou recentes
+- Campeonato e data
+- Status do jogo (ao vivo, encerrado, etc)
 
 Formato da resposta:
 ⚽ [Time Casa] [Placar] x [Placar] [Time Fora]
@@ -98,9 +68,9 @@ Formato da resposta:
 🏆 [Campeonato]
 📊 [Status]
 
-Se não encontrar, responda: "Não encontrei jogos recentes para [time]."
+Se não encontrar informações recentes, responda: "Não encontrei jogos recentes para [time]. Tente novamente mais tarde."
 
-Responda em Português-BR.`;
+Responda APENAS com as informações do placar, sem textos adicionais. Em Português-BR.`;
 
       const urlGemini = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
       
@@ -111,7 +81,7 @@ Responda em Português-BR.`;
       const resposta = resGemini.data?.candidates?.[0]?.content?.parts?.[0]?.text;
       
       if (!resposta || resposta.includes('Não encontrei')) {
-        return reply(`⚠️ Não encontrei placar recente para "${time}".\n\nO time pode não ter jogos agora.`);
+        return reply(`⚠️ Não encontrei placar recente para "${time}".\n\nO jogo pode não estar acontecendo agora.`);
       }
 
       return await sock.sendMessage(groupId, { text: `📡 *Placar - ${time}*\n\n${resposta}` });
