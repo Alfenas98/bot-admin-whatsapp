@@ -23,7 +23,11 @@ function limparAntigos() {
   } catch (e) {}
 }
 
-async function buscarYouTube(query) {
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function buscarYT(query) {
   const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY || '';
   
   if (YOUTUBE_API_KEY) {
@@ -41,12 +45,12 @@ async function buscarYouTube(query) {
             const urlDetalhes = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`;
             const resDetalhes = await axios.get(urlDetalhes, { timeout: 10000 });
             if (resDetalhes.data?.items?.[0]) {
-              duracaoMs = parseISO8601Duration(resDetalhes.data.items[0].contentDetails.duration);
+              duracaoMs = parseDuration(resDetalhes.data.items[0].contentDetails.duration);
             }
           } catch (e) {}
           
           if (duracaoMs < 10 * 60 * 1000) {
-            return { videoId, titulo, duracaoMs };
+            return { videoId, titulo, duracaoMs, source: 'youtube' };
           }
         }
       }
@@ -55,7 +59,7 @@ async function buscarYouTube(query) {
     }
   }
 
-  // Fallback: scrape do YouTube
+  // Fallback: scrape
   try {
     const urlScrape = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
     const resScrape = await axios.get(urlScrape, {
@@ -68,66 +72,58 @@ async function buscarYouTube(query) {
       const videoId = match[1];
       const titleMatch = resScrape.data.match(/"title":{"runs":\[{"text":"([^"]+)"/);
       const titulo = titleMatch ? titleMatch[1] : query;
-      return { videoId, titulo, duracaoMs: 0 };
+      return { videoId, titulo, duracaoMs: 0, source: 'youtube' };
     }
-  } catch (e) {
-    console.log('[musica] Erro scrape:', e.message);
-  }
+  } catch (e) {}
 
   return null;
 }
 
-async function baixarComYtDlp(urlVideo, caminhoSaida) {
-  const caminhos = [
-    'yt-dlp',
-    '/usr/local/bin/yt-dlp',
-    '/usr/bin/yt-dlp',
-    '/root/.local/bin/yt-dlp',
-    `${process.env.HOME}/.local/bin/yt-dlp`
-  ];
-  
-  for (const ytdlp of caminhos) {
-    try {
-      const comando = [
-        `"${ytdlp}"`,
-        '--extract-audio',
-        '--audio-format mp3',
-        '--audio-quality 5',
-        '--max-filesize 15M',
-        '--no-playlist',
-        '--no-warnings',
-        '--no-check-certificates',
-        '--user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"',
-        `--output "${caminhoSaida}"`,
-        `"${urlVideo}"`
-      ].join(' ');
-      
-      await new Promise((resolve, reject) => {
-        exec(comando, { timeout: 120000, cwd: DOWNLOAD_DIR }, (error, stdout, stderr) => {
-          if (error) {
-            reject(error);
-          } else {
-            resolve();
-          }
-        });
-      });
-      
-      return true;
-    } catch (e) {
-      continue;
+async function buscarDeezer(query) {
+  try {
+    const url = `https://api.deezer.com/search?q=${encodeURIComponent(query)}&limit=1`;
+    const res = await axios.get(url, { timeout: 10000 });
+    
+    if (res.data?.data?.length > 0) {
+      const track = res.data.data[0];
+      return {
+        id: track.id,
+        titulo: track.title,
+        artista: track.artist.name,
+        album: track.album.title,
+        preview: track.preview,
+        link: track.link,
+        source: 'deezer'
+      };
     }
+  } catch (e) {
+    console.log('[musica] Erro Deezer:', e.message);
   }
-  
-  return false;
+  return null;
 }
 
-async function baixarComAxios(urlVideo, caminhoSaida) {
+async function baixarDeezerPreview(url, caminhoSaida) {
+  const response = await axios.get(url, {
+    responseType: 'stream',
+    timeout: 30000
+  });
+  
+  const writer = fs.createWriteStream(caminhoSaida);
+  response.data.pipe(writer);
+  
+  return new Promise((resolve, reject) => {
+    writer.on('finish', resolve);
+    writer.on('error', reject);
+  });
+}
+
+async function baixarYTDL(urlVideo, caminhoSaida) {
   try {
     const ytdl = require('@distube/ytdl-core');
     
     const info = await ytdl.getInfo(urlVideo);
     const stream = ytdl(urlVideo, {
-      quality: 'highestaudio',
+      quality: 'lowestaudio',
       filter: 'audioonly',
       requestOptions: {
         headers: {
@@ -143,7 +139,7 @@ async function baixarComAxios(urlVideo, caminhoSaida) {
       totalSize += chunk.length;
       if (totalSize > 15 * 1024 * 1024) {
         stream.destroy();
-        throw new Error('Arquivo muito grande');
+        throw new Error('too_large');
       }
     });
     
@@ -154,7 +150,7 @@ async function baixarComAxios(urlVideo, caminhoSaida) {
       stream.on('error', reject);
     });
   } catch (e) {
-    throw new Error('Falha no download: ' + e.message);
+    throw e;
   }
 }
 
@@ -178,14 +174,44 @@ module.exports = {
     try {
       await reply('🔍 Buscando música...');
 
-      // Buscar vídeo
-      const resultado = await buscarYouTube(query);
+      // Tentar Deezer primeiro (mais confiável, sem rate limit)
+      const resultadoDeezer = await buscarDeezer(query);
       
-      if (!resultado) {
-        return reply(`⚠️ Não encontrei nenhum resultado para "${query}".`);
+      if (resultadoDeezer?.preview) {
+        await reply(`🎵 Enviando: ${resultadoDeezer.titulo} - ${resultadoDeezer.artista}\n⏳ Aguarde...`);
+        
+        try {
+          await baixarDeezerPreview(resultadoDeezer.preview, caminhoArquivo);
+          
+          if (fs.existsSync(caminhoArquivo) && fs.statSync(caminhoArquivo).size > 1000) {
+            await sock.sendMessage(groupId, {
+              audio: fs.readFileSync(caminhoArquivo),
+              mimetype: 'audio/mpeg',
+              fileName: `${resultadoDeezer.titulo}.mp3`,
+              ptt: false
+            }, { quoted: msg });
+            
+            try { fs.unlinkSync(caminhoArquivo); } catch (e) {}
+            return;
+          }
+        } catch (e) {
+          console.log('[musica] Deezer falhou, tentando YouTube');
+        }
       }
 
-      const { videoId, titulo, duracaoMs } = resultado;
+      // Fallback: YouTube
+      const resultadoYT = await buscarYT(query);
+      
+      if (!resultadoYT) {
+        if (resultadoDeezer) {
+          await reply(`🎵 *${resultadoDeezer.titulo} - ${resultadoDeezer.artista}*\n\n🔗 Ouça aqui: ${resultadoDeezer.link}\n\n_⚠️ Preview indisponível, mas você pode ouvir no link acima!_`);
+        } else {
+          return reply(`⚠️ Não encontrei nenhum resultado para "${query}".`);
+        }
+        return;
+      }
+
+      const { videoId, titulo, duracaoMs } = resultadoYT;
 
       if (duracaoMs > 10 * 60 * 1000) {
         return reply('⚠️ Música muito longa! Máximo de 10 minutos.');
@@ -195,33 +221,39 @@ module.exports = {
 
       const urlVideo = `https://www.youtube.com/watch?v=${videoId}`;
       
+      // Tentar ytdl-core com retry
       let sucesso = false;
-      let ultimoErro = null;
+      let tentativas = 0;
+      const maxTentativas = 3;
       
-      // Tentar yt-dlp primeiro
-      try {
-        sucesso = await baixarComYtDlp(urlVideo, caminhoArquivo);
-      } catch (e) {
-        console.log('[musica] yt-dlp falhou:', e.message);
-        ultimoErro = e;
-      }
-      
-      // Fallback: ytdl-core
-      if (!sucesso) {
+      while (!sucesso && tentativas < maxTentativas) {
+        tentativas++;
         try {
-          await baixarComAxios(urlVideo, caminhoArquivo);
+          await baixarYTDL(urlVideo, caminhoArquivo);
           sucesso = true;
-        } catch (e2) {
-          console.log('[musica] ytdl-core falhou:', e2.message);
-          ultimoErro = e2;
+        } catch (e) {
+          console.log(`[musica] Tentativa ${tentativas} falhou:`, e.message);
+          
+          if (e.message?.includes('429') || e.statusCode === 429) {
+            if (tentativas < maxTentativas) {
+              await reply(`⚠️ YouTube limitou. Tentativa ${tentativas}/${maxTentativas}. Aguardando...`);
+              await delay(10000 * tentativas);
+            }
+          } else if (e.message?.includes('too_large')) {
+            return reply('⚠️ Música muito grande. Tente uma mais curta.');
+          } else {
+            break;
+          }
         }
       }
       
       if (!sucesso) {
-        if (ultimoErro?.message?.includes('429') || ultimoErro?.statusCode === 429) {
+        if (resultadoDeezer) {
+          await reply(`🎵 *${resultadoDeezer.titulo} - ${resultadoDeezer.artista}*\n\n🔗 Ouça aqui: ${resultadoDeezer.link}\n\n_⚠️ Download indisponível, mas você pode ouvir no link!_`);
+        } else {
           return reply('⚠️ YouTube está limitando requisições. Tente novamente em 5-10 minutos.');
         }
-        throw ultimoErro || new Error('Falha desconhecida');
+        return;
       }
 
       // Encontrar arquivo
@@ -255,16 +287,12 @@ module.exports = {
       console.error('[musica] Erro:', err.message);
       try { fs.unlinkSync(caminhoArquivo); } catch (e) {}
       
-      if (err.message.includes('429')) {
-        return reply('⚠️ YouTube está limitando requisições. Tente novamente em alguns minutos.');
-      }
-      
-      return reply('⚠️ Erro ao baixar música. Tente outro termo ou aguarde alguns minutos.');
+      return reply('⚠️ Erro ao processar música. Tente novamente mais tarde.');
     }
   }
 };
 
-function parseISO8601Duration(duration) {
+function parseDuration(duration) {
   const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!match) return 0;
   const horas = parseInt(match[1] || 0);
