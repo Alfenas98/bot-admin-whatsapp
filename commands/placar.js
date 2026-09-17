@@ -16,36 +16,43 @@ module.exports = {
     }
 
     try {
-      // Buscar jogos ao vivo
-      const url = `${BASE_URL}/jogos/ao-vivo`;
+      // Buscar jogos ao vivo (API Futebol Brasil)
+      const url = `${BASE_URL}/ao-vivo`;
       const res = await axios.get(url, {
-        timeout: 10000,
-        headers: { 'Authorization': `Bearer ${API_KEY}` }
+        timeout: 15000,
+        headers: {
+          'Authorization': `Bearer ${API_KEY}`,
+          'Content-Type': 'application/json'
+        }
       });
       
       const jogosAoVivo = res.data || [];
       
-      // Buscar jogos do time
-      const jogosTime = jogosAoVivo.filter(jogo => {
+      // Filtrar jogos do time pesquisado (busca por nome popular ou slug)
+      const timeLower = time.toLowerCase();
+      const jogosFiltrados = jogosAoVivo.filter(jogo => {
         const casa = (jogo.time_mandante?.nome_popular || '').toLowerCase();
         const fora = (jogo.time_visitante?.nome_popular || '').toLowerCase();
-        const t = time.toLowerCase();
-        return casa.includes(t) || fora.includes(t) || 
-               casa.includes(t.replace(' ', '')) || fora.includes(t.replace(' ', ''));
+        const slugCasa = (jogo.time_mandante?.slug || '').toLowerCase();
+        const slugFora = (jogo.time_visitante?.slug || '').toLowerCase();
+        return casa.includes(timeLower) || fora.includes(timeLower) ||
+               slugCasa.includes(timeLower) || slugFora.includes(timeLower);
       });
       
       // Se encontrou jogo ao vivo
-      if (jogosTime.length > 0) {
+      if (jogosFiltrados.length > 0) {
         let texto = `⚽ *Placar ao Vivo*\n\n`;
         
-        jogosTime.forEach(jogo => {
+        jogosFiltrados.forEach(jogo => {
           const timeCasa = jogo.time_mandante?.nome_popular || 'Casa';
           const timeFora = jogo.time_visitante?.nome_popular || 'Fora';
           const placarCasa = jogo.placar_mandante ?? 0;
           const placarFora = jogo.placar_visitante ?? 0;
           const status = jogo.status || 'Em andamento';
+          const estadio = jogo.estadio?.nome || '';
           
           texto += `🏟️ ${timeCasa} ${placarCasa} x ${placarFora} ${timeFora}\n`;
+          texto += `📍 ${estadio}\n`;
           texto += `📊 ${status}\n\n`;
         });
         
@@ -53,18 +60,17 @@ module.exports = {
       }
       
       // Se não tem ao vivo, buscar próximos jogos
-      const urlProximos = `${BASE_URL}/jogos?campeonato_id=10`;
+      const urlProximos = `${BASE_URL}/campeonatos/10/jogos`;
       const resProximos = await axios.get(urlProximos, {
-        timeout: 10000,
+        timeout: 15000,
         headers: { 'Authorization': `Bearer ${API_KEY}` }
       });
       
       const proximos = (resProximos.data || []).filter(jogo => {
         const casa = (jogo.time_mandante?.nome_popular || '').toLowerCase();
         const fora = (jogo.time_visitante?.nome_popular || '').toLowerCase();
-        const t = time.toLowerCase();
-        return casa.includes(t) || fora.includes(t);
-      }).slice(0, 5);
+        return casa.includes(timeLower) || fora.includes(timeLower);
+      }).slice(0, 3);
       
       if (proximos.length > 0) {
         let texto = `📅 *Próximos Jogos*\n\n`;
@@ -83,7 +89,7 @@ module.exports = {
         return await sock.sendMessage(groupId, { text: texto });
       }
       
-      // Fallback com Gemini
+      // Fallback: usar Gemini
       const prompt = `Busque na internet o placar mais recente do time "${time}". 
 
 Formato da resposta:
