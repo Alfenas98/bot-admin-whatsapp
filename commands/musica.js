@@ -21,144 +21,166 @@ function limparAntigos() {
   } catch (e) {}
 }
 
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-function normalizar(str) {
+function normalizarBusca(str) {
   return str
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-zA-Z0-9\s-]/g, '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
-async function buscarYouTube(query) {
-  // Gerar variações da busca
-  const variacoes = [
-    query,
-    normalizar(query),
-    query.replace(/[^a-zA-Z0-9\s-]/g, ''),
-    query.split('-')[0]?.trim(),
-    query.split(' ').slice(0, 3).join(' '),
-    query.split(' ').slice(0, 2).join(' ')
-  ].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
-  
-  for (const termo of variacoes) {
-    if (!termo || termo.length < 3) continue;
+// DEEZER - Busca e download do preview
+async function buscarDeezer(query) {
+  try {
+    const termos = [
+      query,
+      normalizarBusca(query),
+      query.split('-')[0]?.trim(),
+      query.split(' ').slice(0, 3).join(' ')
+    ].filter((v, i, a) => v && a.indexOf(v) === i);
     
-    try {
-      const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(termo)}`;
-      const res = await axios.get(url, {
-        timeout: 15000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-          'Accept-Encoding': 'gzip, deflate, br'
-        },
-        decompress: true
-      });
-      
-      const html = res.data;
-      
-      // Múltiplos padrões para encontrar videoId
-      const padroes = [
-        /"videoId":"([a-zA-Z0-9_-]{11})"/g,
-        /"videoId\\":\\"([a-zA-Z0-9_-]{11})\\/g,
-        /watch\?v=([a-zA-Z0-9_-]{11})/g,
-        /"videoId":"([a-zA-Z0-9_-]{11})"/g,
-        /\\"videoId\\":\\"([a-zA-Z0-9_-]{11})\\/g
-      ];
-      
-      const videoIds = new Set();
-      
-      for (const padrao of padroes) {
-        let match;
-        while ((match = padrao.exec(html)) !== null) {
-          const vid = match[1];
-          if (vid && vid.length === 11) {
-            videoIds.add(vid);
+    for (const termo of termos) {
+      try {
+        const url = `https://api.deezer.com/search?q=${encodeURIComponent(termo)}&limit=5&output=jsonp`;
+        const res = await axios.get(url, {
+          timeout: 15000,
+          responseType: 'text'
+        });
+        
+        // Deezer retorna JSONP, precisamos extrair o JSON
+        let jsonStr = res.data;
+        const match = jsonStr.match(/jsonp_\d+\((.*)\)/s);
+        if (match) {
+          jsonStr = match[1];
+        }
+        
+        const data = JSON.parse(jsonStr);
+        
+        if (data.data?.length > 0) {
+          for (const track of data.data) {
+            if (track.preview) {
+              return {
+                titulo: track.title,
+                artista: track.artist.name,
+                album: track.album?.title || '',
+                preview: track.preview,
+                link: track.link,
+                source: 'Deezer',
+                duracao: track.duration
+              };
+            }
           }
         }
+      } catch (e) {
+        console.log(`[musica] Deezer "${termo}" erro:`, e.message);
+        continue;
       }
-      
-      // Buscar títulos
-      const titulos = [];
-      const titPadrao = /"title":{"runs":\[{"text":"([^"]+)"/g;
-      let titMatch;
-      while ((titMatch = titPadrao.exec(html)) !== null) {
-        titulos.push(titMatch[1]);
-      }
-      
-      if (videoIds.size > 0) {
-        const ids = Array.from(videoIds);
-        for (let i = 0; i < Math.min(ids.length, 5); i++) {
-          return {
-            videoId: ids[i],
-            titulo: titulos[i] || termo
-          };
-        }
-      }
-      
-      // Segundo padrão: buscar no JSON embutido
-      const jsonMatch = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/);
-      if (jsonMatch) {
-        return {
-          videoId: jsonMatch[1],
-          titulo: termo
-        };
-      }
-      
-    } catch (e) {
-      console.log(`[musica] Erro ao buscar "${termo}":`, e.message);
-      continue;
     }
+  } catch (e) {
+    console.log('[musica] Erro Deezer:', e.message);
   }
-  
   return null;
 }
 
-async function baixarYTDL(urlVideo, caminhoSaida) {
-  const ytdl = require('@distube/ytdl-core');
-  
-  const info = await ytdl.getInfo(urlVideo);
-  
-  const formatos = info.formats.filter(f => 
-    f.hasAudio && !f.hasVideo && 
-    f.contentLength && parseInt(f.contentLength) < 15 * 1024 * 1024
-  );
-  
-  let url;
-  if (formatos.length > 0) {
-    const melhor = formatos.sort((a, b) => 
-      parseInt(b.contentLength || 0) - parseInt(a.contentLength || 0)
-    )[0];
-    url = melhor.url;
-  } else {
-    const stream = ytdl(urlVideo, { quality: 'lowestaudio', filter: 'audioonly' });
-    const writeStream = fs.createWriteStream(caminhoSaida);
-    let totalSize = 0;
+// JAMENDO - Música Creative Commons (completa)
+async function buscarJamendo(query) {
+  try {
+    const termos = [query, normalizarBusca(query)];
     
-    stream.on('data', (chunk) => {
-      totalSize += chunk.length;
-      if (totalSize > 15 * 1024 * 1024) stream.destroy();
-    });
-    
-    return new Promise((resolve, reject) => {
-      stream.pipe(writeStream);
-      writeStream.on('finish', resolve);
-      writeStream.on('error', reject);
-      stream.on('error', reject);
-    });
+    for (const termo of termos) {
+      try {
+        const url = `https://api.jamendo.com/v3.0/tracks/?format=json&limit=5&search=${encodeURIComponent(termo)}&include=musicinfo&audioformat=mp32`;
+        const res = await axios.get(url, { timeout: 15000 });
+        
+        if (res.data?.results?.length > 0) {
+          for (const track of res.data.results) {
+            if (track.duration > 30 && track.duration < 600) {
+              return {
+                titulo: track.name,
+                artista: track.artist_name,
+                album: track.album_name || '',
+                url: track.audio,
+                source: 'Jamendo',
+                duracao: track.duration
+              };
+            }
+          }
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+  } catch (e) {
+    console.log('[musica] Erro Jamendo:', e.message);
   }
+  return null;
+}
+
+// OPENVERSE - Creative Commons
+async function buscarOpenverse(query) {
+  try {
+    const url = `https://api.openverse.engineering/v1/audio/?q=${encodeURIComponent(query)}&license=by,by-sa,pdm,cc0&limit=5`;
+    const res = await axios.get(url, {
+      timeout: 15000,
+      headers: { 'User-Agent': 'HermesBot/1.0' }
+    });
+    
+    if (res.data?.results?.length > 0) {
+      for (const audio of res.data.results) {
+        if (audio.url && audio.filetype === 'mp3') {
+          return {
+            titulo: audio.title || query,
+            artista: audio.creator || 'Desconhecido',
+            url: audio.url,
+            source: 'Openverse',
+            duracao: audio.duration || 0
+          };
+        }
+      }
+    }
+  } catch (e) {
+    console.log('[musica] Erro Openverse:', e.message);
+  }
+  return null;
+}
+
+// FREEDSOUND - Sons e músicas
+async function buscarFreesound(query) {
+  const FREESOUND_KEY = process.env.FREESOUND_KEY || '';
+  if (!FREESOUND_KEY) return null;
   
+  try {
+    const url = `https://freesound.org/apiv2/search/text/?query=${encodeURIComponent(query)}&filter=type:mp3&page_size=3&token=${FREESOUND_KEY}`;
+    const res = await axios.get(url, { timeout: 15000 });
+    
+    if (res.data?.results?.length > 0) {
+      for (const sound of res.data.results) {
+        if (sound.previews?.preview_hq_mp3) {
+          return {
+            titulo: sound.name,
+            artista: sound.username,
+            url: sound.previews.preview_hq_mp3,
+            source: 'Freesound',
+            duracao: sound.duration
+          };
+        }
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+async function baixar(url, destino) {
   const response = await axios.get(url, {
     responseType: 'stream',
-    timeout: 120000
+    timeout: 120000,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
   });
-  
-  const writer = fs.createWriteStream(caminhoSaida);
+
+  const writer = fs.createWriteStream(destino);
   let totalSize = 0;
   
   response.data.on('data', (chunk) => {
@@ -187,7 +209,7 @@ module.exports = {
     const query = args.join(' ');
     
     if (!query) {
-      return reply('🎵 Use: #musica <nome da música>');
+      return reply('🎵 Use: #musica <nome da música>\nExemplo:\n#musica Hungria não troco\n#musica jazz relaxante');
     }
 
     limparAntigos();
@@ -196,40 +218,45 @@ module.exports = {
     const caminhoArquivo = path.join(DOWNLOAD_DIR, nomeArquivo);
 
     try {
-      await reply('🔍 Buscando...');
+      await reply('🔍 Buscando música...');
 
-      const video = await buscarYouTube(query);
+      let musica = null;
+      let fonte = '';
       
-      if (!video) {
-        return reply(`⚠️ Não encontrei "${query}". Tente outro termo ou verifique a ortografia.`);
-      }
-
-      await reply(`🎵 ${video.titulo}\n⏳ Baixando...`);
-
-      const urlVideo = `https://www.youtube.com/watch?v=${video.videoId}`;
+      // 1. Jamendo (música completa, CC)
+      musica = await buscarJamendo(query);
+      if (musica) fonte = 'Jamendo';
       
-      let sucesso = false;
-      let erro = null;
-      
-      for (let i = 0; i < 3 && !sucesso; i++) {
-        try {
-          await baixarYTDL(urlVideo, caminhoArquivo);
-          sucesso = true;
-        } catch (e) {
-          erro = e;
-          console.log(`[musica] Tentativa ${i+1}:`, e.message);
-          
-          if (e.message?.includes('429') || e.statusCode === 429) {
-            if (i < 2) await delay(20000 * (i + 1));
-          } else {
-            break;
-          }
-        }
+      // 2. Openverse (CC)
+      if (!musica) {
+        musica = await buscarOpenverse(query);
+        if (musica) fonte = 'Openverse';
       }
       
-      if (!sucesso) {
-        return reply('⚠️ YouTube está limitando. Tente em 5-10 min.');
+      // 3. Freesound
+      if (!musica) {
+        musica = await buscarFreesound(query);
+        if (musica) fonte = 'Freesound';
       }
+      
+      // 4. Deezer (preview 30s - sempre funciona)
+      if (!musica) {
+        musica = await buscarDeezer(query);
+        if (musica) fonte = 'Deezer';
+      }
+      
+      if (!musica) {
+        return reply(`⚠️ Não encontrei "${query}".\n\nDicas:\n• Verifique a ortografia\n• Use termos em inglês (ex: "jazz", "lofi")\n• Tente nomes de artistas`);
+      }
+
+      const isPreview = musica.source === 'Deezer';
+      const mensagem = isPreview 
+        ? `🎵 ${musica.titulo} - ${musica.artista}\n📡 ${fonte} (preview 30s)\n⏳ Baixando...`
+        : `🎵 ${musica.titulo} - ${musica.artista}\n📡 ${fonte}\n⏳ Baixando...`;
+      
+      await reply(mensagem);
+
+      await baixar(musica.url, caminhoArquivo);
 
       if (!fs.existsSync(caminhoArquivo)) {
         return reply('⚠️ Erro ao processar.');
@@ -241,15 +268,15 @@ module.exports = {
         return reply('⚠️ Áudio muito grande!');
       }
 
-      if (stats.size < 10000) {
+      if (stats.size < 5000) {
         fs.unlinkSync(caminhoArquivo);
-        return reply('⚠️ Download inválido.');
+        return reply('⚠️ Download inválido. Tente outro termo.');
       }
 
       await sock.sendMessage(groupId, {
         audio: fs.readFileSync(caminhoArquivo),
         mimetype: 'audio/mpeg',
-        fileName: `${video.titulo}.mp3`,
+        fileName: `${musica.titulo}.mp3`,
         ptt: false
       }, { quoted: msg });
 
@@ -258,7 +285,7 @@ module.exports = {
     } catch (err) {
       console.error('[musica] Erro:', err.message);
       try { fs.unlinkSync(caminhoArquivo); } catch (e) {}
-      return reply('⚠️ Erro ao processar música.');
+      return reply('⚠️ Erro ao baixar. Tente outro termo.');
     }
   }
 };
