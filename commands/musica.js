@@ -28,30 +28,34 @@ async function buscarYouTube(query) {
   
   if (YOUTUBE_API_KEY) {
     try {
-      const urlBusca = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=1&key=${YOUTUBE_API_KEY}`;
+      const urlBusca = `https://www.googleapis.com/youtube/v3/search?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=3&key=${YOUTUBE_API_KEY}`;
       const resBusca = await axios.get(urlBusca, { timeout: 10000 });
       
       if (resBusca.data?.items?.length > 0) {
-        const videoId = resBusca.data.items[0].id.videoId;
-        const titulo = resBusca.data.items[0].snippet.title;
-        
-        let duracaoMs = 0;
-        try {
-          const urlDetalhes = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`;
-          const resDetalhes = await axios.get(urlDetalhes, { timeout: 10000 });
-          if (resDetalhes.data?.items?.[0]) {
-            duracaoMs = parseISO8601Duration(resDetalhes.data.items[0].contentDetails.duration);
+        for (const item of resBusca.data.items) {
+          const videoId = item.id.videoId;
+          const titulo = item.snippet.title;
+          
+          let duracaoMs = 0;
+          try {
+            const urlDetalhes = `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${videoId}&key=${YOUTUBE_API_KEY}`;
+            const resDetalhes = await axios.get(urlDetalhes, { timeout: 10000 });
+            if (resDetalhes.data?.items?.[0]) {
+              duracaoMs = parseISO8601Duration(resDetalhes.data.items[0].contentDetails.duration);
+            }
+          } catch (e) {}
+          
+          if (duracaoMs < 10 * 60 * 1000) {
+            return { videoId, titulo, duracaoMs };
           }
-        } catch (e) {}
-        
-        return { videoId, titulo, duracaoMs };
+        }
       }
     } catch (e) {
       console.log('[musica] Erro YouTube API:', e.message);
     }
   }
 
-  // Fallback: scrape
+  // Fallback: scrape do YouTube
   try {
     const urlScrape = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
     const resScrape = await axios.get(urlScrape, {
@@ -75,22 +79,48 @@ async function buscarYouTube(query) {
 
 async function baixarComYtDlp(urlVideo, caminhoSaida) {
   return new Promise((resolve, reject) => {
-    const comando = `yt-dlp --extract-audio --audio-format mp3 --audio-quality 5 --max-filesize 15M --no-playlist --no-warnings --output "${caminhoSaida}" "${urlVideo}"`;
+    // Tentar encontrar yt-dlp no PATH ou em locais comuns
+    const comandos = [
+      `yt-dlp --extract-audio --audio-format mp3 --audio-quality 5 --max-filesize 15M --no-playlist --no-warnings --output "${caminhoSaida}" "${urlVideo}"`,
+      `/usr/local/bin/yt-dlp --extract-audio --audio-format mp3 --audio-quality 5 --max-filesize 15M --no-playlist --no-warnings --output "${caminhoSaida}" "${urlVideo}"`,
+      `/usr/bin/yt-dlp --extract-audio --audio-format mp3 --audio-quality 5 --max-filesize 15M --no-playlist --no-warnings --output "${caminhoSaida}" "${urlVideo}"`,
+      `python3 -m ytdlp --extract-audio --audio-format mp3 --audio-quality 5 --max-filesize 15M --no-playlist --no-warnings --output "${caminhoSaida}" "${urlVideo}"`,
+    ];
     
-    exec(comando, { timeout: 120000, cwd: DOWNLOAD_DIR }, (error) => {
-      if (error) reject(error);
-      else resolve();
-    });
+    let tentativa = 0;
+    
+    function tentar() {
+      if (tentativa >= comandos.length) {
+        return reject(new Error('yt-dlp não encontrado'));
+      }
+      
+      exec(comandos[tentativa], { timeout: 120000, cwd: DOWNLOAD_DIR }, (error) => {
+        if (error) {
+          tentativa++;
+          tentar();
+        } else {
+          resolve();
+        }
+      });
+    }
+    
+    tentar();
   });
 }
 
 async function baixarComAxios(urlVideo, caminhoSaida) {
-  // Fallback usando ytdl-core
   try {
     const ytdl = require('@distube/ytdl-core');
+    
+    const info = await ytdl.getInfo(urlVideo);
     const stream = ytdl(urlVideo, {
       quality: 'highestaudio',
-      filter: 'audioonly'
+      filter: 'audioonly',
+      requestOptions: {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      }
     });
     
     const writeStream = fs.createWriteStream(caminhoSaida);
@@ -111,7 +141,7 @@ async function baixarComAxios(urlVideo, caminhoSaida) {
       stream.on('error', reject);
     });
   } catch (e) {
-    throw new Error('ytdl-core não disponível: ' + e.message);
+    throw new Error('Falha no download: ' + e.message);
   }
 }
 
@@ -144,24 +174,34 @@ module.exports = {
 
       const { videoId, titulo, duracaoMs } = resultado;
 
-      // Verificar duração
-      if (duracaoMs > 8 * 60 * 1000) {
-        return reply('⚠️ Música muito longa! Máximo de 8 minutos.');
+      if (duracaoMs > 10 * 60 * 1000) {
+        return reply('⚠️ Música muito longa! Máximo de 10 minutos.');
       }
 
       await reply(`🎵 Baixando: ${titulo}\n⏳ Aguarde...`);
 
       const urlVideo = `https://www.youtube.com/watch?v=${videoId}`;
       
-      // Tentar yt-dlp primeiro, depois ytdl-core
+      let sucesso = false;
+      
+      // Tentar yt-dlp primeiro
       try {
-        await baixarComYtDlp(urlVideo, caminhoArquivo.replace('.mp3', '.%(ext)s'));
+        await baixarComYtDlp(urlVideo, caminhoArquivo);
+        sucesso = true;
       } catch (e) {
-        console.log('[musica] yt-dlp falhou, usando ytdl-core');
-        await baixarComAxios(urlVideo, caminhoArquivo);
+        console.log('[musica] yt-dlp falhou:', e.message);
+        
+        // Fallback: ytdl-core
+        try {
+          await baixarComAxios(urlVideo, caminhoArquivo);
+          sucesso = true;
+        } catch (e2) {
+          console.log('[musica] ytdl-core falhou:', e2.message);
+          throw e2;
+        }
       }
 
-      // Encontrar arquivo (yt-dlp pode mudar a extensão)
+      // Encontrar arquivo
       let arquivoFinal = caminhoArquivo;
       if (!fs.existsSync(caminhoArquivo)) {
         const arquivos = fs.readdirSync(DOWNLOAD_DIR);
@@ -179,7 +219,6 @@ module.exports = {
         return reply('⚠️ Áudio muito grande! Tente uma música mais curta.');
       }
 
-      // Enviar
       await sock.sendMessage(groupId, {
         audio: fs.readFileSync(arquivoFinal),
         mimetype: 'audio/mpeg',
@@ -187,13 +226,17 @@ module.exports = {
         ptt: false
       }, { quoted: msg });
 
-      // Limpar
       try { fs.unlinkSync(arquivoFinal); } catch (e) {}
 
     } catch (err) {
       console.error('[musica] Erro:', err.message);
       try { fs.unlinkSync(caminhoArquivo); } catch (e) {}
-      return reply('⚠️ Erro ao baixar música. Verifique se o yt-dlp está instalado.');
+      
+      if (err.message.includes('429')) {
+        return reply('⚠️ YouTube está limitando requisições. Tente novamente em alguns minutos.');
+      }
+      
+      return reply('⚠️ Erro ao baixar música. Tente outro termo ou aguarde alguns minutos.');
     }
   }
 };
