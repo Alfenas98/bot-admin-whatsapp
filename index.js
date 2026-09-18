@@ -32,6 +32,7 @@ const { calcularInativos } = require('./lib/inactivityChecker');
 const { getRankDiario } = require('./lib/dailyRank');
 const { salvarMidia, listarMidiasSalvas } = require('./lib/mediaSave');
 const { inc, get } = require('./lib/metrics');
+const { checkRateLimit, getUserQueue, getStats } = require('./lib/rateLimiter');
 
 const commands = loadCommands();
 
@@ -453,6 +454,12 @@ async function startBot() {
     };
 
     try {
+      // Verificar rate limit
+      const rateLimitResult = checkRateLimit(senderId, command.name);
+      if (!rateLimitResult.allowed) {
+        return reply(rateLimitResult.message);
+      }
+
       if (command.adminOnly || config.apenasAdminUsaComandos) {
         const ehAdmin = await isGroupAdminCached(sock, groupId, senderId);
         if (!ehAdmin) {
@@ -464,7 +471,7 @@ async function startBot() {
       await command.execute({ sock, msg, groupId, senderId, args, reply, getGroupConfig, setGroupConfig, textContent });
     } catch (err) {
       console.error(`[commands] Erro em ${rawCommand}:`, err.message);
-      await reply('⚠️ Ops, algo deu errado ao executar esse comando.');
+      await reply('⚠️ Ops, algo deu errado ao executar esse commando.');
     }
   });
 
