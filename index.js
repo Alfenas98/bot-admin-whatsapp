@@ -472,22 +472,40 @@ async function startBot() {
     
     if (configIA.autoIA && textContent && !textContent.startsWith('#')) {
       try {
-        const { chatWithMemory } = require('./lib/ai');
+        const { chatWithMemory, autoResponder } = require('./lib/ai');
         
         const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
         const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
         const temMencao = mentionedJid.length > 0;
         const temBot = /\bbot\b/.test(textContent.toLowerCase());
         
-        // Verificar se é resposta a mensagem do bot
+        // Verificar se é resposta a mensagem do bot (múltiplas formas)
         let respondeuAoBot = false;
+        
+        // Método 1: contextInfo.participant
         if (contextInfo?.quotedMessage) {
-          const quotedSender = contextInfo.participant;
-          const botId = sock.user?.id?.split(':')[0];
-          if (quotedSender?.startsWith(botId)) {
+          const quotedSender = contextInfo.participant || contextInfo.remoteJid;
+          const botJid = sock.user?.id || '';
+          const botNumber = botJid.split(':')[0].split('@')[0];
+          
+          console.log(`[auto-ia] quotedSender: ${quotedSender}, botNumber: ${botNumber}`);
+          
+          if (quotedSender?.includes(botNumber)) {
             respondeuAoBot = true;
           }
         }
+        
+        // Método 2: msg.key.fromMe na mensagem respondida
+        if (!respondeuAoBot && contextInfo?.quotedMessage) {
+          const quotedFromMe = contextInfo.quotedMessage.conversation || 
+                               contextInfo.quotedMessage.extendedTextMessage?.text;
+          const botNumbers = sock.user?.id?.split(':')[0]?.split('@') || [];
+          if (botNumbers.some(n => contextInfo.participant?.includes(n))) {
+            respondeuAoBot = true;
+          }
+        }
+        
+        console.log(`[auto-ia] textContent: "${textContent?.slice(0, 50)}", temMencao: ${temMencao}, temBot: ${temBot}, respondeuAoBot: ${respondeuAoBot}`);
         
         if (temMencao || temBot || respondeuAoBot) {
           const userName = msg.pushName || 'Usuário';
@@ -500,7 +518,6 @@ async function startBot() {
           if (respondeuAoBot) {
             resposta = await chatWithMemory(senderId, userName, textContent);
           } else {
-            const { autoResponder } = require('./lib/ai');
             resposta = await autoResponder(userName, textContent);
           }
           
