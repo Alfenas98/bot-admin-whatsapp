@@ -468,14 +468,24 @@ async function startBot() {
 
     // Auto-responder da IA (se ativado)
     const configIA = getGroupConfig(groupId);
+    
     if (configIA.autoIA && textContent && !textContent.startsWith('#')) {
       try {
-        const { isAutoResponderTrigger, autoResponder } = require('./lib/ai');
+        const { autoResponder } = require('./lib/ai');
+        
         // Extrair menções da mensagem
         const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+        const temMencao = mentionedJid.length > 0;
+        const temBot = /\bbot\b/.test(textContent.toLowerCase());
         
-        if (isAutoResponderTrigger(textContent, mentionedJid)) {
+        console.log(`[auto-ia] texto: "${textContent.slice(0, 50)}", mencao: ${temMencao}, bot: ${temBot}`);
+        
+        // Se mencionou o bot ou tem a palavra "bot"
+        if (temMencao || temBot) {
           const userName = msg.pushName || 'Usuário';
+          
+          await sock.sendMessage(groupId, { text: '🤔 Pensando...' }, { quoted: msg });
+          
           const resposta = await autoResponder(userName, textContent);
           if (resposta && resposta !== 'SKIP') {
             await sock.sendMessage(groupId, { text: `🤖 ${resposta}` }, { quoted: msg });
