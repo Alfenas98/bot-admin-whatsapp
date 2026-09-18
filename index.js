@@ -471,7 +471,10 @@ async function startBot() {
     if (configIA.autoIA && textContent && !textContent.startsWith('#')) {
       try {
         const { isAutoResponderTrigger, autoResponder } = require('./lib/ai');
-        if (isAutoResponderTrigger(textContent)) {
+        // Extrair menções da mensagem
+        const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+        
+        if (isAutoResponderTrigger(textContent, mentionedJid)) {
           const userName = msg.pushName || 'Usuário';
           const resposta = await autoResponder(userName, textContent);
           if (resposta && resposta !== 'SKIP') {
