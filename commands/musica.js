@@ -1,6 +1,7 @@
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const { exec } = require('child_process');
 
 const DOWNLOAD_DIR = path.join(__dirname, '..', 'temp', 'music');
 if (!fs.existsSync(DOWNLOAD_DIR)) fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
@@ -20,20 +21,119 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// ===================== PIPED API (sem rate limit) =====================
+async function buscarPiped(query) {
+  console.log('[musica] Buscando no Piped...');
+  
+  const instancias = [
+    'https://pipedapi.kavin.rocks',
+    'https://pipedapi.adminforge.de',
+    'https://api.piped.projectsegfau.lt',
+    'https://pipedapi.r4fo.com',
+    'https://pipedapi.phoenix.fun'
+  ];
+  
+  for (const instancia of instancias) {
+    try {
+      const url = `${instancia}/search?q=${encodeURIComponent(query)}&filter=videos`;
+      const res = await axios.get(url, {
+        timeout: 15000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json'
+        }
+      });
+      
+      if (res.data?.items?.length > 0) {
+        for (const video of res.data.items) {
+          if (video.url && video.duration < 600) {
+            const videoId = video.url.replace('/watch?v=', '');
+            return {
+              videoId,
+              titulo: video.title,
+              duracaoMs: video.duration * 1000,
+              source: instancia
+            };
+          }
+        }
+      }
+    } catch (e) {
+      console.log(`[musica] Piped ${instancia} falhou:`, e.message);
+      continue;
+    }
+  }
+  
+  return null;
+}
+
+// Baixar streams info do Piped
+async function baixarPiped(videoId) {
+  const instancias = [
+    'https://pipedapi.kavin.rocks',
+    'https://pipedapi.adminforge.de',
+    'https://api.piped.projectsegfau.lt',
+    'https://pipedapi.r4fo.com'
+  ];
+  
+  for (const instancia of instancias) {
+    try {
+      const url = `${instancia}/streams/${videoId}`;
+      const res = await axios.get(url, {
+        timeout: 15000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+      
+      if (res.data?.audioStreams?.length > 0) {
+        // Buscar melhor stream de áudio
+        const audioStreams = res.data.audioStreams
+          .filter(s => s.format === 'M4A' || s.format === 'WEBMA' || s.format === 'MP3')
+          .sort((a, b) => (parseInt(b.quality || 0) || 0) - (parseInt(a.quality || 0) || 0));
+        
+        if (audioStreams.length > 0) {
+          return {
+            url: audioStreams[0].url,
+            filename: `${res.data.title}.m4a`,
+            title: res.data.title,
+            mimeType: audioStreams[0].mimeType || 'audio/m4a'
+          };
+        }
+      }
+      
+      // Fallback: qualquer stream de áudio
+      if (res.data?.audioStreams?.length > 0) {
+        const stream = res.data.audioStreams[0];
+        return {
+          url: stream.url,
+          filename: `${res.data.title}.m4a`,
+          title: res.data.title,
+          mimeType: stream.mimeType || 'audio/m4a'
+        };
+      }
+    } catch (e) {
+      console.log(`[musica] Piped streams ${instancia} falhou:`, e.message);
+      continue;
+    }
+  }
+  
+  return null;
+}
+
+// ===================== YOUTUBE COM PROXY =====================
 async function buscarYouTube(query) {
+  console.log('[musica] Buscando no YouTube...');
   try {
     const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
     const res = await axios.get(url, {
       timeout: 15000,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept-Language': 'pt-BR,pt;q=0.9'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       }
     });
     
-    const html = res.data;
-    const videoIdMatch = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/g);
-    const titleMatch = html.match(/"title":{"runs":\[{"text":"([^"]+)"/g);
+    const videoIdMatch = res.data.match(/"videoId":"([a-zA-Z0-9_-]{11})"/g);
+    const titleMatch = res.data.match(/"title":{"runs":\[{"text":"([^"]+)"/g);
     
     if (videoIdMatch && videoIdMatch.length > 0) {
       const ids = new Set();
@@ -65,13 +165,11 @@ async function buscarYouTube(query) {
 async function baixarYTDL(urlVideo, caminhoSaida) {
   const ytdl = require('@distube/ytdl-core');
   
-  // Tentar com proxy se disponível
-  const proxyUrl = process.env.YOUTUBE_PROXY || '';
+  const proxy = process.env.YOUTUBE_PROXY || '';
   
   const options = {
-    quality: 'highestaudio',
+    quality: 'lowestaudio',
     filter: 'audioonly',
-    highWaterMark: 1 << 25,
     requestOptions: {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -79,61 +177,49 @@ async function baixarYTDL(urlVideo, caminhoSaida) {
     }
   };
   
-  // Se tiver proxy, adicionar
-  if (proxyUrl) {
-    options.requestOptions.agent = new (require('https').Agent)({
-      rejectUnauthorized: false
-    });
+  if (proxy) {
+    // Configurar agente de proxy
+    try {
+      const { HttpsProxyAgent } = require('https-proxy-agent');
+      options.requestOptions.agent = new HttpsProxyAgent(proxy);
+    } catch (e) {
+      console.log('[musica] Proxy agent não disponível, sem proxy');
+    }
   }
   
-  const info = await ytdl.getInfo(urlVideo, options);
-  
-  // Filtrar formatos de áudio válidos
-  const formatos = info.formats.filter(f => 
-    f.hasAudio && !f.hasVideo && 
-    f.contentLength && parseInt(f.contentLength) < 15 * 1024 * 1024 &&
-    !info.videoDetails.isLiveContent
-  );
-  
-  if (formatos.length === 0) {
-    // Stream direto
-    const stream = ytdl(urlVideo, options);
-    const writeStream = fs.createWriteStream(caminhoSaida);
-    let totalSize = 0;
-    
-    stream.on('data', (chunk) => {
-      totalSize += chunk.length;
-      if (totalSize > 15 * 1024 * 1024) stream.destroy();
-    });
-    
-    return new Promise((resolve, reject) => {
-      stream.pipe(writeStream);
-      writeStream.on('finish', resolve);
-      writeStream.on('error', reject);
-      stream.on('error', reject);
-    });
-  }
-  
-  const melhor = formatos.sort((a, b) => 
-    parseInt(b.contentLength || 0) - parseInt(a.contentLength || 0)
-  )[0];
-  
-  const response = await axios.get(melhor.url, {
-    responseType: 'stream',
-    timeout: 120000
-  });
-  
-  const writer = fs.createWriteStream(caminhoSaida);
+  const stream = ytdl(urlVideo, options);
+  const writeStream = fs.createWriteStream(caminhoSaida);
   let totalSize = 0;
   
-  response.data.on('data', (chunk) => {
+  stream.on('data', (chunk) => {
     totalSize += chunk.length;
-    if (totalSize > 16 * 1024 * 1024) {
-      response.data.destroy();
-      writer.destroy();
-    }
+    if (totalSize > 15 * 1024 * 1024) stream.destroy();
   });
   
+  return new Promise((resolve, reject) => {
+    stream.pipe(writeStream);
+    writeStream.on('finish', resolve);
+    writeStream.on('error', reject);
+    stream.on('error', reject);
+  });
+}
+
+// ===================== DOWNLOAD GENÉRICO =====================
+async function baixar(url, destino) {
+  const response = await axios.get(url, {
+    responseType: 'stream',
+    timeout: 120000,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+  });
+
+  const writer = fs.createWriteStream(destino);
+  let totalSize = 0;
+  response.data.on('data', chunk => {
+    totalSize += chunk.length;
+    if (totalSize > 16 * 1024 * 1024) { response.data.destroy(); writer.destroy(); }
+  });
   response.data.pipe(writer);
   
   return new Promise((resolve, reject) => {
@@ -150,79 +236,129 @@ module.exports = {
 
   async execute({ sock, groupId, msg, reply, args }) {
     const query = args.join(' ');
-    
-    if (!query) {
-      return reply('🎵 Use: #musica <nome da música>\nExemplo:\n#musica Asa - Bebê');
-    }
+    if (!query) return reply('🎵 Use: #musica <nome da música>');
 
     limparAntigos();
 
-    const nomeArquivo = `${Date.now()}_${Math.random().toString(36).substring(7)}.mp3`;
-    const caminhoArquivo = path.join(DOWNLOAD_DIR, nomeArquivo);
+    const nomeArquivo = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const caminhoArquivo = path.join(DOWNLOAD_DIR, nomeArquivo + '.m4a');
+    const caminhoMp3 = path.join(DOWNLOAD_DIR, nomeArquivo + '.mp3');
 
     try {
-      await reply('🔍 Buscando...');
+      await reply('🔍 Buscando música...');
 
-      const video = await buscarYouTube(query);
+      let musica = null;
+      let fonte = '';
       
-      if (!video) {
-        return reply(`⚠️ Não encontrei "${query}"`);
+      // 1. Piped (sem rate limit)
+      musica = await buscarPiped(query);
+      if (musica) fonte = 'Piped';
+      
+      // 2. YouTube (fallback)
+      if (!musica) {
+        musica = await buscarYouTube(query);
+        if (musica) fonte = 'YouTube';
+      }
+      
+      if (!musica) {
+        return reply(`⚠️ Não encontrei "${query}". Tente outro termo.`);
       }
 
-      await reply(`🎵 ${video.titulo}\n⏳ Baixando...`);
+      await reply(`🎵 ${musica.titulo}\n📡 ${fonte}\n⏳ Baixando...`);
 
-      const urlVideo = `https://www.youtube.com/watch?v=${video.videoId}`;
+      let urlDownload = null;
+      let mimeType = 'audio/m4a';
+      let filename = `${musica.titulo}.m4a`;
       
-      let sucesso = false;
-      let erro = null;
-      
-      for (let i = 0; i < 3 && !sucesso; i++) {
+      // Se veio do Piped, usar streams
+      if (fonte === 'Piped') {
         try {
-          await baixarYTDL(urlVideo, caminhoArquivo);
-          sucesso = true;
+          const piped = await baixarPiped(musica.videoId);
+          if (piped?.url) {
+            urlDownload = piped.url;
+            filename = piped.filename;
+            mimeType = piped.mimeType;
+            console.log('[musica] URL Piped:', urlDownload);
+          }
         } catch (e) {
-          erro = e;
-          console.log(`[musica] Tentativa ${i+1}:`, e.message);
-          
-          if (e.message?.includes('429') || e.statusCode === 429) {
-            if (i < 2) await delay(20000 * (i + 1));
-          } else {
-            break;
+          console.log('[musica] Erro Piped:', e.message);
+        }
+      }
+      
+      // Fallback: ytdl-core
+      if (!urlDownload) {
+        const urlVideo = `https://www.youtube.com/watch?v=${musica.videoId}`;
+        let sucesso = false;
+        let erro = null;
+        
+        for (let i = 0; i < 3 && !sucesso; i++) {
+          try {
+            await baixarYTDL(urlVideo, caminhoMp3);
+            sucesso = true;
+            
+            if (fs.existsSync(caminhoMp3)) {
+              const stats = fs.statSync(caminhoMp3);
+              if (stats.size > 50000) {
+                urlDownload = caminhoMp3;
+                filename = `${musica.titulo}.mp3`;
+                mimeType = 'audio/mpeg';
+              }
+            }
+          } catch (e) {
+            erro = e;
+            if (e.message?.includes('429') || e.statusCode === 429) {
+              if (i < 2) await delay(20000 * (i + 1));
+            } else {
+              break;
+            }
           }
         }
       }
       
-      if (!sucesso) {
-        return reply('⚠️ YouTube está limitando. Tente em 5-10 min.');
+      // Baixar do Piped se conseguiu URL
+      if (urlDownload && urlDownload.startsWith('http') && !urlDownload.includes('youtube')) {
+        await baixar(urlDownload, caminhoArquivo);
+      }
+      
+      // Verificar qual arquivo enviar
+      let arquivoParaEnviar = null;
+      let mimeTypeFinal = 'audio/mpeg';
+      let filenameFinal = `${musica.titulo}.mp3`;
+      
+      if (fs.existsSync(caminhoArquivo) && fs.statSync(caminhoArquivo).size > 50000) {
+        arquivoParaEnviar = caminhoArquivo;
+        mimeTypeFinal = 'audio/m4a';
+        filenameFinal = `${musica.titulo}.m4a`;
+      } else if (fs.statSync(caminhoMp3).size > 50000) {
+        arquivoParaEnviar = caminhoMp3;
+        mimeTypeFinal = 'audio/mpeg';
+        filenameFinal = `${musica.titulo}.mp3`;
+      }
+      
+      if (!arquivoParaEnviar) {
+        return reply('⚠️ Não foi possível baixar. Tente em alguns minutos.');
       }
 
-      if (!fs.existsSync(caminhoArquivo)) {
-        return reply('⚠️ Erro ao processar.');
-      }
-
-      const stats = fs.statSync(caminhoArquivo);
+      const stats = fs.statSync(arquivoParaEnviar);
       if (stats.size > 16 * 1024 * 1024) {
-        fs.unlinkSync(caminhoArquivo);
+        fs.unlinkSync(arquivoParaEnviar);
         return reply('⚠️ Áudio muito grande!');
       }
 
-      if (stats.size < 10000) {
-        fs.unlinkSync(caminhoArquivo);
-        return reply('⚠️ Download inválido.');
-      }
-
       await sock.sendMessage(groupId, {
-        audio: fs.readFileSync(caminhoArquivo),
-        mimetype: 'audio/mpeg',
-        fileName: `${video.titulo}.mp3`,
+        audio: fs.readFileSync(arquivoParaEnviar),
+        mimetype: mimeTypeFinal,
+        fileName: filenameFinal,
         ptt: false
       }, { quoted: msg });
 
       try { fs.unlinkSync(caminhoArquivo); } catch (e) {}
+      try { fs.unlinkSync(caminhoMp3); } catch (e) {}
 
     } catch (err) {
       console.error('[musica] Erro:', err.message);
       try { fs.unlinkSync(caminhoArquivo); } catch (e) {}
+      try { fs.unlinkSync(caminhoMp3); } catch (e) {}
       return reply('⚠️ Erro ao baixar música.');
     }
   }
