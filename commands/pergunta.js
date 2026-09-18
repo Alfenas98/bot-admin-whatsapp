@@ -7,12 +7,11 @@ module.exports = {
 
   async execute({ groupId, msg, reply, args, senderId }) {
     if (!process.env.GEMINI_API_KEY) {
-      return reply('⚠️ IA não configurada. Defina GEMINI_API_KEY no Railway.');
+      return reply('⚠️ IA não configurada.');
     }
 
     let textoPergunta = '';
     
-    // Verificar se é uma resposta a outra mensagem
     const mensagemRespondida = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
     
     if (mensagemRespondida) {
@@ -24,15 +23,15 @@ module.exports = {
       }
       
       if (args.length > 0) {
-        textoPergunta = args.join(' ') + (textoRespondido ? `\n\nContexto: "${textoRespondido}"` : '');
+        textoPergunta = args.join(' ') + (textoRespondido ? `\nContexto: "${textoRespondido}"` : '');
       } else if (textoRespondido) {
         textoPergunta = textoRespondido;
       } else {
-        return reply('⚠️ Responda a uma mensagem ou envie uma pergunta após o comando.');
+        return reply('⚠️ Responda a uma mensagem ou envie uma pergunta.');
       }
     } else {
       if (args.length === 0) {
-        return reply('⚠️ Use: #pergunta <sua pergunta>\n\nExemplo: #pergunta Qual a capital do Brasil?');
+        return reply('⚠️ Use: #pergunta <sua pergunta>');
       }
       textoPergunta = args.join(' ');
     }
@@ -46,7 +45,7 @@ module.exports = {
     }
 
     try {
-      await reply('🤔 Pesquisando e pensando...');
+      await reply('🤔 Pensando...');
       
       const userName = msg.pushName || 'Usuário';
       const resposta = await chatWithMemory(senderId, userName, textoPergunta);
@@ -56,7 +55,7 @@ module.exports = {
       }
 
       const respostaLimitada = resposta.substring(0, 4000);
-      return reply(`🤖 *Resposta:*\n\n${respostaLimitada}`);
+      return reply(`🤖 ${respostaLimitada}`);
     } catch (err) {
       console.error('[pergunta] Erro:', err.message);
       return reply('⚠️ Erro ao processar pergunta.');

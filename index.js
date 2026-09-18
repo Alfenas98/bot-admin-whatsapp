@@ -474,17 +474,14 @@ async function startBot() {
       try {
         const { autoResponder } = require('./lib/ai');
         
-        // Extrair menções da mensagem
         const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
         const temMencao = mentionedJid.length > 0;
         const temBot = /\bbot\b/.test(textContent.toLowerCase());
         
-        console.log(`[auto-ia] texto: "${textContent.slice(0, 50)}", mencao: ${temMencao}, bot: ${temBot}`);
-        
-        // Se mencionou o bot ou tem a palavra "bot"
         if (temMencao || temBot) {
           const userName = msg.pushName || 'Usuário';
           
+          // Enviar mensagem de pensando
           await sock.sendMessage(groupId, { text: '🤔 Pensando...' }, { quoted: msg });
           
           const resposta = await autoResponder(userName, textContent);
@@ -494,6 +491,10 @@ async function startBot() {
         }
       } catch (e) {
         console.error('[auto-ia] Erro:', e.message);
+        // Não deixar silencioso - enviar erro
+        try {
+          await sock.sendMessage(groupId, { text: '⚠️ Erro ao processar. Tente novamente.' }, { quoted: msg });
+        } catch (e2) {}
       }
     }
 
