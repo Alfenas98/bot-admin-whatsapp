@@ -16,113 +16,124 @@ function limparAntigos() {
   } catch (e) {}
 }
 
-// ===================== CCMIXTER (música completa) =====================
-async function buscarCCMixter(query) {
-  console.log('[musica] Buscando no CCMixter...');
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function buscarYouTube(query) {
   try {
-    const termo = encodeURIComponent(query);
-    const url = `https://ccmixter.org/api/query?tags=${termo}&type=playlist&format=json&limit=5`;
-    const res = await axios.get(url, { timeout: 15000 });
+    const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+    const res = await axios.get(url, {
+      timeout: 15000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept-Language': 'pt-BR,pt;q=0.9'
+      }
+    });
     
-    if (Array.isArray(res.data) && res.data.length > 0) {
-      for (const track of res.data) {
-        if (track.files && track.files.length > 0) {
-          for (const file of track.files) {
-            if (file.file_extra) {
-              const fileUrl = file.file_extra;
-              if (fileUrl.startsWith('http://') || fileUrl.startsWith('https://')) {
-                return {
-                  titulo: track.upload_name || query,
-                  artista: track.user_name || 'Desconhecido',
-                  url: fileUrl,
-                  source: 'CCMixter'
-                };
-              }
-            }
-          }
-        }
+    const html = res.data;
+    const videoIdMatch = html.match(/"videoId":"([a-zA-Z0-9_-]{11})"/g);
+    const titleMatch = html.match(/"title":{"runs":\[{"text":"([^"]+)"/g);
+    
+    if (videoIdMatch && videoIdMatch.length > 0) {
+      const ids = new Set();
+      for (const m of videoIdMatch) {
+        const id = m.match(/"videoId":"([a-zA-Z0-9_-]{11})"/)?.[1];
+        if (id) ids.add(id);
+      }
+      
+      const titulos = [];
+      for (const t of titleMatch) {
+        const tit = t.match(/"title":{"runs":\[{"text":"([^"]+)"/)?.[1];
+        if (tit) titulos.push(tit);
+      }
+      
+      const videoIds = Array.from(ids);
+      if (videoIds.length > 0) {
+        return {
+          videoId: videoIds[0],
+          titulo: titulos[0] || query
+        };
       }
     }
-    console.log('[musica] CCMixter: nenhum resultado');
   } catch (e) {
-    console.log('[musica] CCMixter erro:', e.message);
+    console.log('[musica] Erro busca YouTube:', e.message);
   }
   return null;
 }
 
-// ===================== JAMENDO (música completa) =====================
-async function buscarJamendo(query) {
-  console.log('[musica] Buscando no Jamendo...');
-  try {
-    const termo = encodeURIComponent(query);
-    const url = `https://api.jamendo.com/v3.0/tracks/?format=json&limit=5&search=${termo}&audioformat=mp32`;
-    const res = await axios.get(url, { timeout: 15000 });
-    
-    if (res.data?.results?.length > 0) {
-      for (const track of res.data.results) {
-        if (track.audio && track.duration > 30) {
-          return {
-            titulo: track.name || query,
-            artista: track.artist_name || 'Desconhecido',
-            url: track.audio,
-            source: 'Jamendo'
-          };
-        }
-      }
-    }
-    console.log('[musica] Jamendo: nenhum resultado');
-  } catch (e) {
-    console.log('[musica] Jamendo erro:', e.message);
-  }
-  return null;
-}
-
-// ===================== DEEZER (fallback 30s) =====================
-async function buscarDeezer(query) {
-  console.log('[musica] Buscando no Deezer...');
-  try {
-    const termo = encodeURIComponent(query);
-    const url = `https://api.deezer.com/search?q=${termo}&limit=5`;
-    const res = await axios.get(url, { timeout: 15000 });
-    
-    if (res.data?.data?.length > 0) {
-      for (const track of res.data.data) {
-        if (track.preview) {
-          return {
-            titulo: track.title || query,
-            artista: track.artist?.name || 'Desconhecido',
-            url: track.preview,
-            source: 'Deezer'
-          };
-        }
-      }
-    }
-    console.log('[musica] Deezer: nenhum resultado');
-  } catch (e) {
-    console.log('[musica] Deezer erro:', e.message);
-  }
-  return null;
-}
-
-async function baixar(url, destino) {
-  console.log('[musica] Baixando de:', url);
+async function baixarYTDL(urlVideo, caminhoSaida) {
+  const ytdl = require('@distube/ytdl-core');
   
-  if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
-    throw new Error('URL inválida: ' + url);
+  // Tentar com proxy se disponível
+  const proxyUrl = process.env.YOUTUBE_PROXY || '';
+  
+  const options = {
+    quality: 'highestaudio',
+    filter: 'audioonly',
+    highWaterMark: 1 << 25,
+    requestOptions: {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    }
+  };
+  
+  // Se tiver proxy, adicionar
+  if (proxyUrl) {
+    options.requestOptions.agent = new (require('https').Agent)({
+      rejectUnauthorized: false
+    });
   }
   
-  const response = await axios.get(url, {
+  const info = await ytdl.getInfo(urlVideo, options);
+  
+  // Filtrar formatos de áudio válidos
+  const formatos = info.formats.filter(f => 
+    f.hasAudio && !f.hasVideo && 
+    f.contentLength && parseInt(f.contentLength) < 15 * 1024 * 1024 &&
+    !info.videoDetails.isLiveContent
+  );
+  
+  if (formatos.length === 0) {
+    // Stream direto
+    const stream = ytdl(urlVideo, options);
+    const writeStream = fs.createWriteStream(caminhoSaida);
+    let totalSize = 0;
+    
+    stream.on('data', (chunk) => {
+      totalSize += chunk.length;
+      if (totalSize > 15 * 1024 * 1024) stream.destroy();
+    });
+    
+    return new Promise((resolve, reject) => {
+      stream.pipe(writeStream);
+      writeStream.on('finish', resolve);
+      writeStream.on('error', reject);
+      stream.on('error', reject);
+    });
+  }
+  
+  const melhor = formatos.sort((a, b) => 
+    parseInt(b.contentLength || 0) - parseInt(a.contentLength || 0)
+  )[0];
+  
+  const response = await axios.get(melhor.url, {
     responseType: 'stream',
-    timeout: 120000,
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    timeout: 120000
   });
-
-  const writer = fs.createWriteStream(destino);
+  
+  const writer = fs.createWriteStream(caminhoSaida);
   let totalSize = 0;
-  response.data.on('data', chunk => {
+  
+  response.data.on('data', (chunk) => {
     totalSize += chunk.length;
-    if (totalSize > 16 * 1024 * 1024) { response.data.destroy(); writer.destroy(); }
+    if (totalSize > 16 * 1024 * 1024) {
+      response.data.destroy();
+      writer.destroy();
+    }
   });
+  
   response.data.pipe(writer);
   
   return new Promise((resolve, reject) => {
@@ -139,7 +150,10 @@ module.exports = {
 
   async execute({ sock, groupId, msg, reply, args }) {
     const query = args.join(' ');
-    if (!query) return reply('🎵 Use: #musica <nome da música>');
+    
+    if (!query) {
+      return reply('🎵 Use: #musica <nome da música>\nExemplo:\n#musica Asa - Bebê');
+    }
 
     limparAntigos();
 
@@ -147,52 +161,67 @@ module.exports = {
     const caminhoArquivo = path.join(DOWNLOAD_DIR, nomeArquivo);
 
     try {
-      await reply('🔍 Buscando música...');
+      await reply('🔍 Buscando...');
 
-      let musica = null;
-      let fonte = '';
+      const video = await buscarYouTube(query);
       
-      // 1. CCMixter (música completa)
-      musica = await buscarCCMixter(query);
-      if (musica) fonte = 'CCMixter 🎶';
-      
-      // 2. Jamendo (música completa)
-      if (!musica) {
-        musica = await buscarJamendo(query);
-        if (musica) fonte = 'Jamendo 🎶';
-      }
-      
-      // 3. Deezer (preview 30s)
-      if (!musica) {
-        musica = await buscarDeezer(query);
-        if (musica) fonte = 'Deezer (preview 30s)';
-      }
-      
-      if (!musica) {
-        return reply(`⚠️ Não encontrei "${query}". Tente outro termo.`);
+      if (!video) {
+        return reply(`⚠️ Não encontrei "${query}"`);
       }
 
-      await reply(`🎵 ${musica.titulo}${musica.artista ? ' - ' + musica.artista : ''}\n📡 ${fonte}\n⏳ Baixando...`);
+      await reply(`🎵 ${video.titulo}\n⏳ Baixando...`);
 
-      await baixar(musica.url, caminhoArquivo);
+      const urlVideo = `https://www.youtube.com/watch?v=${video.videoId}`;
+      
+      let sucesso = false;
+      let erro = null;
+      
+      for (let i = 0; i < 3 && !sucesso; i++) {
+        try {
+          await baixarYTDL(urlVideo, caminhoArquivo);
+          sucesso = true;
+        } catch (e) {
+          erro = e;
+          console.log(`[musica] Tentativa ${i+1}:`, e.message);
+          
+          if (e.message?.includes('429') || e.statusCode === 429) {
+            if (i < 2) await delay(20000 * (i + 1));
+          } else {
+            break;
+          }
+        }
+      }
+      
+      if (!sucesso) {
+        return reply('⚠️ YouTube está limitando. Tente em 5-10 min.');
+      }
 
-      if (!fs.existsSync(caminhoArquivo)) return reply('⚠️ Erro ao processar.');
+      if (!fs.existsSync(caminhoArquivo)) {
+        return reply('⚠️ Erro ao processar.');
+      }
 
       const stats = fs.statSync(caminhoArquivo);
-      if (stats.size > 16 * 1024 * 1024) { fs.unlinkSync(caminhoArquivo); return reply('⚠️ Áudio muito grande!'); }
-      if (stats.size < 5000) { fs.unlinkSync(caminhoArquivo); return reply('⚠️ Download inválido.'); }
+      if (stats.size > 16 * 1024 * 1024) {
+        fs.unlinkSync(caminhoArquivo);
+        return reply('⚠️ Áudio muito grande!');
+      }
+
+      if (stats.size < 10000) {
+        fs.unlinkSync(caminhoArquivo);
+        return reply('⚠️ Download inválido.');
+      }
 
       await sock.sendMessage(groupId, {
         audio: fs.readFileSync(caminhoArquivo),
         mimetype: 'audio/mpeg',
-        fileName: `${musica.titulo}.mp3`,
+        fileName: `${video.titulo}.mp3`,
         ptt: false
       }, { quoted: msg });
 
       try { fs.unlinkSync(caminhoArquivo); } catch (e) {}
 
     } catch (err) {
-      console.error('[musica] Erro geral:', err.message);
+      console.error('[musica] Erro:', err.message);
       try { fs.unlinkSync(caminhoArquivo); } catch (e) {}
       return reply('⚠️ Erro ao baixar música.');
     }
