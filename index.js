@@ -333,6 +333,35 @@ async function startBot() {
 
     registrarAtividade(groupId, senderId);
 
+    // Verificar se é resposta a uma mensagem do bot (auto-chat)
+    const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
+    if (contextInfo?.quotedMessage) {
+      const quotedSender = contextInfo.participant;
+      const botId = sock.user?.id?.split(':')[0];
+      
+      // Se o usuário respondeu uma mensagem do bot
+      if (quotedSender?.startsWith(botId)) {
+        const configIA = getGroupConfig(groupId);
+        if (configIA.autoIA && textContent && !textContent.startsWith('#')) {
+          try {
+            const { chatWithMemory } = require('./lib/ai');
+            const userName = msg.pushName || 'Usuário';
+            
+            await sock.sendMessage(groupId, { text: '🤔 Pensando...' }, { quoted: msg });
+            
+            const resposta = await chatWithMemory(senderId, userName, textContent);
+            if (resposta) {
+              await sock.sendMessage(groupId, { text: `🤖 ${resposta}` }, { quoted: msg });
+            } else {
+              await sock.sendMessage(groupId, { text: '⚠️ A IA não conseguiu responder. Tente novamente.' }, { quoted: msg });
+            }
+          } catch (e) {
+            console.error('[auto-ia-reply] Erro:', e.message);
+          }
+        }
+      }
+    }
+
     const config = getGroupConfig(groupId);
 
     if (config.anticlone) {
