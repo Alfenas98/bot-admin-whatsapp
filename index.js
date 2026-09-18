@@ -437,6 +437,23 @@ async function startBot() {
       }
     }
 
+    // Auto-responder da IA (se ativado)
+    const configIA = getGroupConfig(groupId);
+    if (configIA.autoIA && textContent && !textContent.startsWith('#')) {
+      try {
+        const { isAutoResponderTrigger, autoResponder } = require('./lib/ai');
+        if (isAutoResponderTrigger(textContent)) {
+          const userName = msg.pushName || 'Usuário';
+          const resposta = await autoResponder(userName, textContent);
+          if (resposta && resposta !== 'SKIP') {
+            await sock.sendMessage(groupId, { text: `🤖 ${resposta}` }, { quoted: msg });
+          }
+        }
+      } catch (e) {
+        console.error('[auto-ia] Erro:', e.message);
+      }
+    }
+
     const prefixoUsado = config.prefixos.find(p => textContent.startsWith(p));
     if (!prefixoUsado) return;
 
