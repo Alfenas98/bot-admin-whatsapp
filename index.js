@@ -32,7 +32,7 @@ const { calcularInativos } = require('./lib/inactivityChecker');
 const { getRankDiario } = require('./lib/dailyRank');
 const { salvarMidia, listarMidiasSalvas } = require('./lib/mediaSave');
 const { inc, get } = require('./lib/metrics');
-const { checkRateLimit, getUserQueue, getStats } = require('./lib/rateLimiter');
+const { checkRateLimit, enqueue, scheduleExecution, getUserQueue, getStats } = require('./lib/rateLimiter');
 
 const commands = loadCommands();
 
@@ -457,6 +457,42 @@ async function startBot() {
       // Verificar rate limit
       const rateLimitResult = checkRateLimit(senderId, command.name);
       if (!rateLimitResult.allowed) {
+        // Se está em cooldown, adicionar à fila e mencionar
+        if (rateLimitResult.reason === 'cooldown') {
+          const position = enqueue(senderId, {
+            commandName: command.name,
+            command,
+            msg,
+            groupId,
+            senderId,
+            args,
+            getGroupConfig,
+            setGroupConfig,
+            textContent
+          });
+          
+          // Mencionar usuário sobre a fila
+          await sock.sendMessage(groupId, {
+            text: `⏳ @${senderId.split('@')[0]} você está em *cooldown*!\n\n📋 Comando adicionado à fila. Posição: *${position}*\n⏱️ Será executado automaticamente em *${rateLimitResult.remaining}s*`,
+            mentions: [senderId]
+          });
+          
+          // Agendar execução automática
+          scheduleExecution(senderId, {
+            commandName: command.name,
+            command,
+            msg,
+            groupId,
+            senderId,
+            args,
+            getGroupConfig,
+            setGroupConfig,
+            textContent
+          }, sock, reply);
+          
+          return;
+        }
+        
         return reply(rateLimitResult.message);
       }
 
@@ -471,7 +507,7 @@ async function startBot() {
       await command.execute({ sock, msg, groupId, senderId, args, reply, getGroupConfig, setGroupConfig, textContent });
     } catch (err) {
       console.error(`[commands] Erro em ${rawCommand}:`, err.message);
-      await reply('⚠️ Ops, algo deu errado ao executar esse commando.');
+      await reply('⚠️ Ops, algo deu errado ao executar esse comando.');
     }
   });
 
