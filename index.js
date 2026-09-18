@@ -32,7 +32,8 @@ const { calcularInativos } = require('./lib/inactivityChecker');
 const { getRankDiario } = require('./lib/dailyRank');
 const { salvarMidia, listarMidiasSalvas } = require('./lib/mediaSave');
 const { inc, get } = require('./lib/metrics');
-const { checkRateLimit, enqueue, scheduleExecution, getUserQueue, getStats } = require('./lib/rateLimiter');
+const { checkRateLimit, enqueue, scheduleExecution } = require('./lib/rateLimiter');
+const { pesquisar } = require('./lib/ai');
 
 const commands = loadCommands();
 

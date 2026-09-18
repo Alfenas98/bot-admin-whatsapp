@@ -1,11 +1,11 @@
-const axios = require('axios');
+const { chatWithMemory } = require('../lib/ai');
 
 module.exports = {
   name: 'pergunta',
   aliases: ['ia', 'perguntar', 'chat', 'gemini'],
   adminOnly: false,
 
-  async execute({ groupId, msg, reply, args }) {
+  async execute({ groupId, msg, reply, args, senderId }) {
     if (!process.env.GEMINI_API_KEY) {
       return reply('⚠️ IA não configurada. Defina GEMINI_API_KEY no Railway.');
     }
@@ -24,7 +24,7 @@ module.exports = {
       }
       
       if (args.length > 0) {
-        textoPergunta = args.join(' ') + (textoRespondido ? `\n\nContexto da mensagem respondida: "${textoRespondido}"` : '');
+        textoPergunta = args.join(' ') + (textoRespondido ? `\n\nContexto: "${textoRespondido}"` : '');
       } else if (textoRespondido) {
         textoPergunta = textoRespondido;
       } else {
@@ -32,7 +32,7 @@ module.exports = {
       }
     } else {
       if (args.length === 0) {
-        return reply('⚠️ Use: #pergunta <sua pergunta>\n\nExemplo: #pergunta Como programar em JavaScript?\n\nOu responda a uma mensagem com #pergunta');
+        return reply('⚠️ Use: #pergunta <sua pergunta>\n\nExemplo: #pergunta Qual a capital do Brasil?');
       }
       textoPergunta = args.join(' ');
     }
@@ -46,39 +46,20 @@ module.exports = {
     }
 
     try {
-      // Chamar API do Gemini
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+      await reply('🤔 Pesquisando e pensando...');
       
-      const res = await axios.post(url, {
-        contents: [{ parts: [{ text: textoPergunta }] }]
-      }, { timeout: 30000 });
-
-      const resposta = res.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const userName = msg.pushName || 'Usuário';
+      const resposta = await chatWithMemory(senderId, userName, textoPergunta);
       
       if (!resposta) {
         return reply('⚠️ A IA não conseguiu responder. Tente novamente.');
       }
 
-      // Limitar tamanho da resposta do WhatsApp
       const respostaLimitada = resposta.substring(0, 4000);
-      
-      return reply(`🤖 *Resposta da IA:*\n\n${respostaLimitada}`);
+      return reply(`🤖 *Resposta:*\n\n${respostaLimitada}`);
     } catch (err) {
-      console.error('[pergunta] Erro completo:', err);
-      console.error('[pergunta] Status:', err.response?.status);
-      console.error('[pergunta] Data:', err.response?.data);
-      console.error('[pergunta] Key existe?', !!process.env.GEMINI_API_KEY);
-      console.error('[pergunta] Key valor:', process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 10) + '...' : 'N/A');
-      if (err.response?.status === 429) {
-        return reply('⚠️ Muitas requisições para a IA. Aguarde um momento.');
-      }
-      if (err.response?.status === 400) {
-        return reply('⚠️ Erro na requisição: ' + (err.response?.data?.error?.message || 'Dados inválidos'));
-      }
-      if (err.response?.status === 403) {
-        return reply('⚠️ Key inválida ou sem permissão. Verifique GEMINI_API_KEY no Railway.');
-      }
-      return reply('⚠️ Erro ao processar pergunta: ' + (err.message || 'Erro desconhecido'));
+      console.error('[pergunta] Erro:', err.message);
+      return reply('⚠️ Erro ao processar pergunta.');
     }
   }
 };
