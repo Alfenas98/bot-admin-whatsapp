@@ -8,22 +8,49 @@ module.exports = {
 
   async execute({ sock, groupId, reply }) {
     try {
-      // Acessar usuários do grupo
-      const grupo = db.get(['users', groupId]).value();
+      // Debug: verificar estrutura
+      const todosUsuarios = db.get('users').value();
+      console.log('[top10] Estrutura users:', typeof todosUsuarios, Object.keys(todosUsuarios || {}));
       
-      if (!grupo || typeof grupo !== 'object' || Array.isArray(grupo)) {
+      // Acessar usuários do grupo
+      const grupo = todosUsuarios?.[groupId];
+      console.log('[top10] Grupo encontrado:', typeof grupo, grupo ? Object.keys(grupo).length : 0);
+      
+      if (!grupo) {
         return reply('📊 Nenhum dado de ranking encontrado. Use #levelsystem on para ativar.');
       }
 
-      const entradas = Object.entries(grupo);
+      // Verificar se é array (formato antigo) e converter para objeto
+      let dadosGrupo = grupo;
+      if (Array.isArray(grupo)) {
+        // Converter array para objeto se necessário
+        dadosGrupo = {};
+        for (const item of grupo) {
+          if (item && item.id) {
+            dadosGrupo[item.id] = item;
+          }
+        }
+        console.log('[top10] Convertido array para objeto. Itens:', Object.keys(dadosGrupo).length);
+      }
+      
+      if (typeof dadosGrupo !== 'object') {
+        return reply('📳 Formato de dados incorreto. Use #levelsystem on para resetar.');
+      }
+
+      const entradas = Object.entries(dadosGrupo);
       
       if (entradas.length === 0) {
-        return reply('📊 Nenhum membro encontrado no ranking. Use #levelsystem on para ativar.');
+        return reply('📊 Nenhum membro encontrado no ranking.');
       }
 
       const lista = [];
       
-      for (const [id, dados] of entradas) {
+      for (const item of entradas) {
+        if (!Array.isArray(item) || item.length < 2) continue;
+        
+        const id = item[0];
+        const dados = item[1];
+        
         if (!dados || typeof dados !== 'object') continue;
         
         const mensagens = dados.mensagens || 0;
@@ -42,7 +69,7 @@ module.exports = {
       }
 
       if (lista.length === 0) {
-        return reply('📊 Nenhum membro com mensagens encontrado. Use #levelsystem on.');
+        return reply('📊 Nenhum membro com mensagens encontrado.');
       }
 
       lista.sort((a, b) => b.pontuacao - a.pontuacao);
@@ -84,7 +111,7 @@ module.exports = {
     } catch (err) {
       console.error('[top10] Erro completo:', err.message);
       console.error('[top10] Stack:', err.stack);
-      return reply('⚠️ Erro ao gerar ranking.');
+      return reply('⚠️ Erro ao gerar ranking. Tente novamente.');
     }
   }
 };
