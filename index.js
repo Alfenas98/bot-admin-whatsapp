@@ -462,33 +462,28 @@ async function startBot() {
         if (caminho) {
           console.log(`[midia-salva] Arquivo salvo: ${caminho}`);
         }
-      } catch (err) {
-        console.error('[midia-salva] Erro:', err.message);
+      } catch (e) {
+        console.error('[midia-salva] Erro:', e.message);
       }
     }
 
-    // Auto-responder da IA (se ativado)
-    const configIA = getGroupConfig(groupId);
-    console.log(`[auto-ia] Verificando: autoIA=${configIA.autoIA}, textContent="${textContent?.slice(0, 30)}", startsWith#=${textContent?.startsWith('#')}`);
-    
-    if (configIA.autoIA && textContent && !textContent.startsWith('#')) {
-      try {
-        const { chatWithMemory, enviarMensagemLonga } = require('./lib/ai');
-        
-        const userName = msg.pushName || 'Usuário';
-        
-        // Enviar mensagem de pensando
-        await sock.sendMessage(groupId, { text: '🤔 Pensando...' }, { quoted: msg });
-        
-        const resposta = await chatWithMemory(senderId, userName, textContent);
-        
-        if (resposta && resposta !== 'SKIP') {
-          await enviarMensagemLonga(sock, groupId, `🤖 ${resposta}`, msg);
-        } else {
-          await sock.sendMessage(groupId, { text: '⚠️ A IA não conseguiu responder. Tente novamente.' }, { quoted: msg });
+    // Auto-responder: mensagem contém "bot"
+    if (textContent && !textContent.startsWith('#')) {
+      const temBot = /\bbot\b/.test(textContent.toLowerCase());
+      if (temBot) {
+        try {
+          const { autoResponder } = require('./lib/ai');
+          const userName = msg.pushName || 'Usuário';
+          
+          await sock.sendMessage(groupId, { text: '🤔 Pensando...' }, { quoted: msg });
+          
+          const resposta = await autoResponder(userName, textContent);
+          if (resposta && resposta !== 'SKIP') {
+            await sock.sendMessage(groupId, { text: `🤖 ${resposta}` }, { quoted: msg });
+          }
+        } catch (e) {
+          console.error('[auto-ia] Erro:', e.message);
         }
-      } catch (e) {
-        console.error('[auto-ia] Erro:', e.message);
       }
     }
 

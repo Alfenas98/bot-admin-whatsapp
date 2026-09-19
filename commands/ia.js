@@ -1,25 +1,25 @@
-const { chatWithMemory, clearMemory } = require('../lib/ai');
+const { chatWithMemory } = require('../lib/ai');
 
 module.exports = {
   name: 'ia',
-  aliases: ['bot', 'chat', 'assistente'],
+  aliases: ['bot', 'ai'],
   adminOnly: false,
 
-  async execute({ sock, msg, groupId, senderId, args, reply }) {
-    if (args.length === 0) {
-      return reply('🤖 *IA do Bot*\n\nUse: #ia <mensagem>\nExemplo: #ia Qual a capital do Brasil?\n\n💡 Dicas:\n• #ia oi → Cumprimentar\n• #ia piada → Contar piada\n• #ia dica → Dica aleatória\n• #limpaia → Limpar memória');
+  async execute({ groupId, msg, reply, args, senderId }) {
+    const message = args.join(' ');
+    
+    if (!message) {
+      return reply('🤖 *IA*\n\nUse: #ia <mensagem>\n\nOu envie uma mensagem com "bot".');
     }
 
-    const message = args.join(' ');
-    const userName = msg.pushName || 'Usuário';
-    
     try {
-      await sock.sendMessage(groupId, { text: '🤔 Pensando...' }, { quoted: msg });
+      await reply('🤔 Pensando...');
       
+      const userName = msg.pushName || 'Usuário';
       const resposta = await chatWithMemory(senderId, userName, message);
       
       if (resposta) {
-        await sock.sendMessage(groupId, { text: `🤖 ${resposta}` }, { quoted: msg });
+        await reply(`🤖 ${resposta}`);
       } else {
         await reply('⚠️ A IA não conseguiu responder. Tente novamente.');
       }
