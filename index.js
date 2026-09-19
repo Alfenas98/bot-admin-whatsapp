@@ -34,6 +34,7 @@ const { salvarMidia, listarMidiasSalvas } = require('./lib/mediaSave');
 const { inc, get } = require('./lib/metrics');
 const { checkRateLimit, enqueue, scheduleExecution } = require('./lib/rateLimiter');
 const { pesquisar } = require('./lib/ai');
+const { iniciarCronTop10 } = require('./lib/cronTop10');
 
 const commands = loadCommands();
 
@@ -166,6 +167,9 @@ async function startBot() {
       adminCache.clear();
       inc('connectionEvents');
       console.log('✅ Bot conectado com sucesso!');
+      
+      // Iniciar cron de Top 10
+      iniciarCronTop10(sock);
     }
   });
 
