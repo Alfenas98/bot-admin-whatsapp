@@ -1,5 +1,5 @@
 const { db } = require('../lib/database');
-const { getPatente, xpAcumuladoParaNivel, xpParaProximoNivel } = require('../lib/xp');
+const { getPatente } = require('../lib/xp');
 
 module.exports = {
   name: 'top10',
@@ -17,7 +17,7 @@ module.exports = {
         nivel: dados.nivel || 1,
         xp: dados.xp || 0,
         mensagens: dados.mensagens || 0,
-        pontuacao: xpAcumuladoParaNivel(dados.nivel || 1) + (dados.xp || 0)
+        pontuacao: (dados.nivel || 1) * 10000 + (dados.xp || 0)
       }))
       .sort((a, b) => b.pontuacao - a.pontuacao)
       .slice(0, 10);
@@ -26,30 +26,30 @@ module.exports = {
       return reply('Ainda não há dados suficientes pro ranking. Ative #levelsystem on e mande mensagens.');
     }
 
+    // Buscar nomes dos participantes
     let metadata;
     try {
       metadata = await sock.groupMetadata(groupId);
     } catch (e) {}
 
-    const participantesMap = {};
+    const nomes = {};
     if (metadata?.participants) {
       for (const p of metadata.participants) {
-        participantesMap[p.id] = p.pushName || p.name || p.id.split('@')[0];
-        participantesMap[p.id.replace('@s.whatsapp.net', '')] = p.pushName || p.name || p.id.split('@')[0];
+        nomes[p.id] = p.pushName || p.id.split('@')[0];
       }
     }
 
+    let texto = '';
     const mencoes = [];
-    const texto = lista
-      .map(([id, dados], i) => {
-        const nomeReal = participantesMap[id] || participantesMap[id.replace('@s.whatsapp.net', '')] || id.split('@')[0];
-        const patente = getPatente(dados.nivel || 1);
-        const xpProximo = xpParaProximoNivel(dados.nivel || 1);
-        const mencao = id.includes('@') ? id : `${id}@s.whatsapp.net`;
-        mencoes.push(mencao);
-        return `${i + 1}. ${nomeReal} — ${patente} (Nv ${dados.nivel || 1})`;
-      })
-      .join('\n');
+    
+    lista.forEach(([id, dados], i) => {
+      const nome = nomes[id] || id.split('@')[0];
+      const patente = getPatente(dados.nivel || 1);
+      const mencao = id.includes('@') ? id : `${id}@s.whatsapp.net`;
+      mencoes.push(mencao);
+      
+      texto += `${i + 1}. ${nome} - ${patente} (Nv ${dados.nivel}, ${dados.mensagens} msgs)\n`;
+    });
 
     return await sock.sendMessage(groupId, {
       text: `🏆 *Top 10 do Grupo*\n\n${texto}`,
