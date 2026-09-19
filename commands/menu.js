@@ -24,7 +24,7 @@ const CATEGORIAS = {
 │  #antipalavrao on/off → Filtra palavrões
 │  #palavrao add <palavra>
 │  #antifloodfigurinha on/off
-│  #antispamrepetido on/off
+│  #antispam on/off
 │  #antimarcacaomassa on/off
 ├─ Anti-Mídia
 │  #antiimagem on/off
