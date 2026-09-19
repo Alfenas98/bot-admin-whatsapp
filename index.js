@@ -34,6 +34,7 @@ const { salvarMidia, listarMidiasSalvas } = require('./lib/mediaSave');
 const { inc, get } = require('./lib/metrics');
 const { checkRateLimit, enqueue, scheduleExecution } = require('./lib/rateLimiter');
 const { pesquisar } = require('./lib/ai');
+const { processarReacoes } = require('./lib/reactions');
 const { iniciarCronTop10 } = require('./lib/cronTop10');
 
 const commands = loadCommands();
@@ -337,6 +338,9 @@ async function startBot() {
     messageCache.guardar(groupId, msg.key.id, textContent, senderId);
 
     registrarAtividade(groupId, senderId);
+
+    // Reações automáticas
+    await processarReacoes(sock, groupId, msg.key, textContent, getGroupConfig(groupId));
 
     // Verificar se é resposta a uma mensagem do bot (auto-chat)
     const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
