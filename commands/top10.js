@@ -8,42 +8,66 @@ module.exports = {
 
   async execute({ sock, groupId, reply }) {
     try {
-      const usuarios = db.get(['users', groupId]).value() || {};
-
-      const lista = Object.entries(usuarios)
-        .filter(([, dados]) => dados && dados.mensagens > 0)
-        .map(([id, dados]) => ({
-          id,
-          nivel: dados.nivel || 1,
-          xp: dados.xp || 0,
-          mensagens: dados.mensagens || 0,
-          pontuacao: (dados.nivel || 1) * 10000 + (dados.xp || 0)
-        }))
-        .sort((a, b) => b.pontuacao - a.pontuacao)
-        .slice(0, 10);
-
-      if (lista.length === 0) {
-        return reply('📊 Ainda não há dados suficientes pro ranking. Use #levelsystem on para ativar.');
+      // Acessar usuários do grupo
+      const grupo = db.get(['users', groupId]).value();
+      
+      if (!grupo || typeof grupo !== 'object' || Array.isArray(grupo)) {
+        return reply('📊 Nenhum dado de ranking encontrado. Use #levelsystem on para ativar.');
       }
 
-      // Buscar nomes dos participantes
+      const entradas = Object.entries(grupo);
+      
+      if (entradas.length === 0) {
+        return reply('📊 Nenhum membro encontrado no ranking. Use #levelsystem on para ativar.');
+      }
+
+      const lista = [];
+      
+      for (const [id, dados] of entradas) {
+        if (!dados || typeof dados !== 'object') continue;
+        
+        const mensagens = dados.mensagens || 0;
+        if (mensagens <= 0) continue;
+        
+        const nivel = dados.nivel || 1;
+        const xp = dados.xp || 0;
+        
+        lista.push({
+          id,
+          nivel,
+          xp,
+          mensagens,
+          pontuacao: nivel * 10000 + xp
+        });
+      }
+
+      if (lista.length === 0) {
+        return reply('📊 Nenhum membro com mensagens encontrado. Use #levelsystem on.');
+      }
+
+      lista.sort((a, b) => b.pontuacao - a.pontuacao);
+      const top10 = lista.slice(0, 10);
+
+      // Buscar nomes
       const nomes = {};
       try {
         const metadata = await sock.groupMetadata(groupId);
-        if (metadata?.participants) {
+        if (metadata && metadata.participants) {
           for (const p of metadata.participants) {
-            nomes[p.id] = p.pushName || p.id.split('@')[0];
+            if (p && p.id) {
+              nomes[p.id] = p.pushName || p.id.split('@')[0];
+            }
           }
         }
       } catch (e) {
-        console.log('[top10] Erro ao buscar metadata:', e.message);
+        console.log('[top10] Erro metadata:', e.message);
       }
 
       let texto = '';
       const mencoes = [];
       
-      for (let i = 0; i < lista.length; i++) {
-        const dados = lista[i];
+      for (let i = 0; i < top10.length; i++) {
+        const dados = top10[i];
         const id = dados.id;
         const nome = nomes[id] || id.split('@')[0];
         const patente = getPatente(dados.nivel);
@@ -60,7 +84,7 @@ module.exports = {
     } catch (err) {
       console.error('[top10] Erro completo:', err.message);
       console.error('[top10] Stack:', err.stack);
-      return reply('⚠️ Erro ao gerar ranking. Verifique se o sistema de levels está ativado.');
+      return reply('⚠️ Erro ao gerar ranking.');
     }
   }
 };
