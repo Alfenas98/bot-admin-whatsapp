@@ -8,33 +8,25 @@ module.exports = {
 
   async execute({ sock, groupId, reply }) {
     try {
-      // Debug: verificar estrutura
       const todosUsuarios = db.get('users').value();
-      console.log('[top10] Estrutura users:', typeof todosUsuarios, Object.keys(todosUsuarios || {}));
-      
-      // Acessar usuários do grupo
       const grupo = todosUsuarios?.[groupId];
-      console.log('[top10] Grupo encontrado:', typeof grupo, grupo ? Object.keys(grupo).length : 0);
       
       if (!grupo) {
         return reply('📊 Nenhum dado de ranking encontrado. Use #levelsystem on para ativar.');
       }
 
-      // Verificar se é array (formato antigo) e converter para objeto
       let dadosGrupo = grupo;
       if (Array.isArray(grupo)) {
-        // Converter array para objeto se necessário
         dadosGrupo = {};
         for (const item of grupo) {
           if (item && item.id) {
             dadosGrupo[item.id] = item;
           }
         }
-        console.log('[top10] Convertido array para objeto. Itens:', Object.keys(dadosGrupo).length);
       }
       
       if (typeof dadosGrupo !== 'object') {
-        return reply('📳 Formato de dados incorreto. Use #levelsystem on para resetar.');
+        return reply('📊 Formato de dados incorreto.');
       }
 
       const entradas = Object.entries(dadosGrupo);
@@ -75,14 +67,19 @@ module.exports = {
       lista.sort((a, b) => b.pontuacao - a.pontuacao);
       const top10 = lista.slice(0, 10);
 
-      // Buscar nomes
-      const nomes = {};
+      // Buscar nomes e JIDs corretos
+      const participantes = {};
       try {
         const metadata = await sock.groupMetadata(groupId);
         if (metadata && metadata.participants) {
           for (const p of metadata.participants) {
             if (p && p.id) {
-              nomes[p.id] = p.pushName || p.id.split('@')[0];
+              // Extrair número do JID
+              const numero = p.id.split('@')[0].split(':')[0];
+              participantes[numero] = {
+                nome: p.pushName || p.id.split('@')[0],
+                jid: p.id
+              };
             }
           }
         }
@@ -96,12 +93,20 @@ module.exports = {
       for (let i = 0; i < top10.length; i++) {
         const dados = top10[i];
         const id = dados.id;
-        const nome = nomes[id] || id.split('@')[0];
-        const patente = getPatente(dados.nivel);
-        const mencao = id.includes('@') ? id : `${id}@s.whatsapp.net`;
-        mencoes.push(mencao);
         
-        texto += `${i + 1}. ${nome} - ${patente} (Nv ${dados.nivel}, ${dados.mensagens} msgs)\n`;
+        // Extrair número do ID
+        const numero = String(id).split('@')[0].split(':')[0];
+        
+        // Buscar participante pelo número
+        const participante = participantes[numero];
+        const nome = participante?.nome || numero;
+        const jid = participante?.jid || `${numero}@s.whatsapp.net`;
+        
+        const patente = getPatente(dados.nivel);
+        
+        mencoes.push(jid);
+        
+        texto += `${i + 1}. @${numero} - ${patente} (Nv ${dados.nivel}, ${dados.mensagens} msgs)\n`;
       }
 
       return await sock.sendMessage(groupId, {
