@@ -469,12 +469,15 @@ async function startBot() {
 
     // Auto-responder da IA (se ativado)
     const configIA = getGroupConfig(groupId);
+    console.log(`[auto-ia] Verificando: autoIA=${configIA.autoIA}, textContent="${textContent?.slice(0, 30)}", startsWith#=${textContent?.startsWith('#')}`);
     
     if (configIA.autoIA && textContent && !textContent.startsWith('#')) {
       try {
         const { chatWithMemory } = require('./lib/ai');
         
         const userName = msg.pushName || 'Usuário';
+        
+        console.log(`[auto-ia] Iniciando resposta para: ${textContent.slice(0, 50)}`);
         
         // Enviar mensagem de pensando
         await sock.sendMessage(groupId, { text: '🤔 Pensando...' }, { quoted: msg });
@@ -484,9 +487,14 @@ async function startBot() {
         
         if (resposta && resposta !== 'SKIP') {
           await sock.sendMessage(groupId, { text: `🤖 ${resposta}` }, { quoted: msg });
+          console.log(`[auto-ia] Resposta enviada: ${resposta.slice(0, 50)}`);
+        } else {
+          console.log('[auto-ia] Sem resposta (SKIP ou null)');
+          await sock.sendMessage(groupId, { text: '⚠️ A IA não conseguiu responder. Tente novamente.' }, { quoted: msg });
         }
       } catch (e) {
         console.error('[auto-ia] Erro:', e.message);
+        await sock.sendMessage(groupId, { text: '⚠️ Erro ao processar. Tente novamente.' }, { quoted: msg });
       }
     }
 
