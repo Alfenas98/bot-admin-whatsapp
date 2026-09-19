@@ -28,7 +28,7 @@ const { createResilientSocket } = require('./lib/resilientSocket');
 const messageCache = require('./lib/messageCache');
 const { adicionarXP } = require('./lib/xp');
 const { registrarAtividade, registrarEntrada } = require('./lib/activity');
-const { calcularInativos } = require('./lib/inactivityChecker');
+const { calcularInativos, getMembrosParaAvisar, getMembrosParaRemover, registrarAviso } = require('./lib/inactivityChecker');
 const { getRankDiario } = require('./lib/dailyRank');
 const { salvarMidia, listarMidiasSalvas } = require('./lib/mediaSave');
 const { inc, get } = require('./lib/metrics');
@@ -568,14 +568,53 @@ async function startBot() {
     for (const groupId of grupos) {
       const config = getGroupConfig(groupId);
       if (!config.inatividade.ativo) continue;
-
-      const inativos = calcularInativos(groupId, config.inatividade.diasLimite);
-      for (const id of inativos) {
-        try {
-          await sock.groupParticipantsUpdate(groupId, [id], 'remove');
-        } catch (err) {
-          console.error('[inactivity] Falha ao remover inativo:', err.message);
+      
+      try {
+        // Obter participantes do grupo
+        const metadata = await sock.groupMetadata(groupId);
+        const botId = sock.user.id;
+        
+        // 1. Avisar membros inativos (primeiro)
+        const paraAvisar = getMembrosParaAvisar(
+          groupId,
+          metadata.participants,
+          botId,
+          config.inatividade.diasLimite
+        );
+        
+        for (const membro of paraAvisar) {
+          try {
+            await sock.sendMessage(groupId, {
+              text: `⚠️ @${membro.split('@')[0]} você está inativo há mais de ${config.inatividade.diasLimite} dias neste grupo.\n\n` +
+                    'Se não enviar mensagem nas próximas 24 horas, será removido automaticamente.',
+              mentions: [membro]
+            });
+            
+            registrarAviso(groupId, membro);
+          } catch (e) {}
         }
+        
+        // 2. Remover quem já foi avisado há +24h
+        const paraRemover = getMembrosParaRemover(
+          groupId,
+          metadata.participants,
+          botId,
+          config.inatividade.diasLimite
+        );
+        
+        for (const id of paraRemover) {
+          try {
+            await sock.groupParticipantsUpdate(groupId, [id], 'remove');
+            
+            // Notificar grupo
+            const texto = '🧹 @' + id.split('@')[0] + ' foi removido por inatividade (' + config.inatividade.diasLimite + '+ dias sem mensagem).';
+            await sock.sendMessage(groupId, { text: texto, mentions: [id] });
+          } catch (err) {
+            console.error('[inactivity] Falha ao remover inativo:', err.message);
+          }
+        }
+      } catch (e) {
+        console.error('[inactivity] Erro na verificação:', e.message);
       }
     }
 
