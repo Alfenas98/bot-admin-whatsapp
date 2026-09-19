@@ -482,7 +482,7 @@ async function startBot() {
         // Verificar se é resposta a mensagem do bot (múltiplas formas)
         let respondeuAoBot = false;
         
-        // Método 1: contextInfo.participant
+        // Método 1: verificar pelo remetente da mensagem respondida
         if (contextInfo?.quotedMessage) {
           const quotedSender = contextInfo.participant || contextInfo.remoteJid;
           const botJid = sock.user?.id || '';
@@ -495,12 +495,24 @@ async function startBot() {
           }
         }
         
-        // Método 2: msg.key.fromMe na mensagem respondida
+        // Método 2: verificar pelo conteúdo da mensagem respondida
         if (!respondeuAoBot && contextInfo?.quotedMessage) {
-          const quotedFromMe = contextInfo.quotedMessage.conversation || 
-                               contextInfo.quotedMessage.extendedTextMessage?.text;
-          const botNumbers = sock.user?.id?.split(':')[0]?.split('@') || [];
-          if (botNumbers.some(n => contextInfo.participant?.includes(n))) {
+          const quotedText = contextInfo.quotedMessage.conversation || 
+                              contextInfo.quotedMessage.extendedTextMessage?.text || '';
+          
+          console.log(`[auto-ia] quotedText: "${quotedText.slice(0, 50)}"`);
+          
+          // Se a mensagem respondida contém o prefixo do bot
+          if (quotedText.startsWith('🤖') || quotedText.startsWith('🤔')) {
+            respondeuAoBot = true;
+          }
+        }
+        
+        // Método 3: verificar pelo fromMe (se disponível)
+        if (!respondeuAoBot && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
+          const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage;
+          // Se a mensagem respondida tem fromMe = true
+          if (quotedMsg.key?.fromMe) {
             respondeuAoBot = true;
           }
         }
