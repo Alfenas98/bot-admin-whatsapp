@@ -1,5 +1,5 @@
 const { getGroupConfig } = require('../lib/database');
-const { getUser, xpParaProximoNivel, barraProgresso, getCargo } = require('../lib/xp');
+const { getUser, xpParaProximoNivel, barraProgresso, getPatente } = require('../lib/xp');
 module.exports = {
   name: 'level',
   aliases: ['rank', 'xp'],
@@ -14,11 +14,11 @@ module.exports = {
     const xpNecessario = xpParaProximoNivel(nivel);
     const progresso = barraProgresso(xpAtual, xpNecessario);
     const porcentagem = Math.min(Math.round((xpAtual / xpNecessario) * 100), 100);
-    const cargo = getCargo(nivel);
+    const patente = getPatente(nivel);
     
     let msg = '⭐ *Seu Progresso*\n\n';
     msg += `🏆 Nível: *${nivel}*\n`;
-    msg += `🎖️ Cargo: *${cargo}*\n`;
+    msg += `🎖️ Patente: *${patente}*\n`;
     msg += `🎯 XP: *${xpAtual} / ${xpNecessario}* (${porcentagem}%)\n`;
     msg += `${progresso}\n\n`;
     msg += `📨 Mensagens: *${user.mensagens || 0}*\n`;

@@ -1,5 +1,5 @@
 const { db } = require('../lib/database');
-const { getCargo, xpAcumuladoParaNivel, xpParaProximoNivel } = require('../lib/xp');
+const { getPatente, xpAcumuladoParaNivel, xpParaProximoNivel } = require('../lib/xp');
 
 module.exports = {
   name: 'top10',
@@ -43,11 +43,11 @@ module.exports = {
     const texto = lista
       .map(([id, dados], i) => {
         const nomeReal = participantesMap[id] || participantesMap[id.replace('@s.whatsapp.net', '')] || id.split('@')[0];
-        const cargo = getCargo(dados.nivel || 1);
+        const patente = getPatente(dados.nivel || 1);
         const xpProximo = xpParaProximoNivel(dados.nivel || 1);
         const mencao = id.includes('@') ? id : `${id}@s.whatsapp.net`;
         mencoes.push(mencao);
-        return `${i + 1}. ${nomeReal} — ${cargo} (Nv ${dados.nivel || 1})`;
+        return `${i + 1}. ${nomeReal} — ${patente} (Nv ${dados.nivel || 1})`;
       })
       .join('\n');
 
