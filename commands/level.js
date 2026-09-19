@@ -1,5 +1,5 @@
 const { getGroupConfig } = require('../lib/database');
-const { getUser, xpParaProximoNivel, barraProgresso } = require('../lib/xp');
+const { getUser, xpParaProximoNivel, barraProgresso, getCargo } = require('../lib/xp');
 module.exports = {
   name: 'level',
   aliases: ['rank', 'xp'],
@@ -14,14 +14,18 @@ module.exports = {
     const xpNecessario = xpParaProximoNivel(nivel);
     const progresso = barraProgresso(xpAtual, xpNecessario);
     const porcentagem = Math.min(Math.round((xpAtual / xpNecessario) * 100), 100);
+    const cargo = getCargo(nivel);
     
-    return reply(
-      `⭐ *Seu Progresso*\n\n` +
-      `🏆 Nível: *${nivel}*\n` +
-      `🎯 XP: *${xpAtual} / ${xpNecessario}* (${porcentagem}%)\n` +
-      `${progresso}\n\n` +
-      `📨 Mensagens: *${user.mensagens || 0}*\n\n` +
-      `_Faltam ${xpNecessario - xpAtual} XP para o próximo nível!_`
-    );
+    let msg = '⭐ *Seu Progresso*\n\n';
+    msg += `🏆 Nível: *${nivel}*\n`;
+    msg += `🎖️ Cargo: *${cargo}*\n`;
+    msg += `🎯 XP: *${xpAtual} / ${xpNecessario}* (${porcentagem}%)\n`;
+    msg += `${progresso}\n\n`;
+    msg += `📨 Mensagens: *${user.mensagens || 0}*\n`;
+    msg += `🔥 Streak: *${user.streak || 0} mensagens*\n`;
+    msg += `📅 Dias consecutivos: *${user.diasConsecutivos || 0}*\n\n`;
+    msg += `_Faltam ${xpNecessario - xpAtual} XP para o próximo nível!_`;
+    
+    return reply(msg);
   }
 };
