@@ -472,70 +472,18 @@ async function startBot() {
     
     if (configIA.autoIA && textContent && !textContent.startsWith('#')) {
       try {
-        const { chatWithMemory, autoResponder } = require('./lib/ai');
+        const { chatWithMemory } = require('./lib/ai');
         
-        const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-        const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
-        const temMencao = mentionedJid.length > 0;
-        const temBot = /\bbot\b/.test(textContent.toLowerCase());
+        const userName = msg.pushName || 'Usuário';
         
-        // Verificar se é resposta a mensagem do bot (múltiplas formas)
-        let respondeuAoBot = false;
+        // Enviar mensagem de pensando
+        await sock.sendMessage(groupId, { text: '🤔 Pensando...' }, { quoted: msg });
         
-        // Método 1: verificar pelo remetente da mensagem respondida
-        if (contextInfo?.quotedMessage) {
-          const quotedSender = contextInfo.participant || contextInfo.remoteJid;
-          const botJid = sock.user?.id || '';
-          const botNumber = botJid.split(':')[0].split('@')[0];
-          
-          console.log(`[auto-ia] quotedSender: ${quotedSender}, botNumber: ${botNumber}`);
-          
-          if (quotedSender?.includes(botNumber)) {
-            respondeuAoBot = true;
-          }
-        }
+        // Usar chatWithMemory para TODAS as mensagens quando autoIA está on
+        const resposta = await chatWithMemory(senderId, userName, textContent);
         
-        // Método 2: verificar pelo conteúdo da mensagem respondida
-        if (!respondeuAoBot && contextInfo?.quotedMessage) {
-          const quotedText = contextInfo.quotedMessage.conversation || 
-                              contextInfo.quotedMessage.extendedTextMessage?.text || '';
-          
-          console.log(`[auto-ia] quotedText: "${quotedText.slice(0, 50)}"`);
-          
-          // Se a mensagem respondida contém o prefixo do bot
-          if (quotedText.startsWith('🤖') || quotedText.startsWith('🤔')) {
-            respondeuAoBot = true;
-          }
-        }
-        
-        // Método 3: verificar pelo fromMe (se disponível)
-        if (!respondeuAoBot && msg.message?.extendedTextMessage?.contextInfo?.quotedMessage) {
-          const quotedMsg = msg.message.extendedTextMessage.contextInfo.quotedMessage;
-          // Se a mensagem respondida tem fromMe = true
-          if (quotedMsg.key?.fromMe) {
-            respondeuAoBot = true;
-          }
-        }
-        
-        console.log(`[auto-ia] textContent: "${textContent?.slice(0, 50)}", temMencao: ${temMencao}, temBot: ${temBot}, respondeuAoBot: ${respondeuAoBot}`);
-        
-        if (temMencao || temBot || respondeuAoBot) {
-          const userName = msg.pushName || 'Usuário';
-          
-          // Enviar mensagem de pensando
-          await sock.sendMessage(groupId, { text: '🤔 Pensando...' }, { quoted: msg });
-          
-          // Se respondeu ao bot, usar chatWithMemory para continuar conversa
-          let resposta;
-          if (respondeuAoBot) {
-            resposta = await chatWithMemory(senderId, userName, textContent);
-          } else {
-            resposta = await autoResponder(userName, textContent);
-          }
-          
-          if (resposta && resposta !== 'SKIP') {
-            await sock.sendMessage(groupId, { text: `🤖 ${resposta}` }, { quoted: msg });
-          }
+        if (resposta && resposta !== 'SKIP') {
+          await sock.sendMessage(groupId, { text: `🤖 ${resposta}` }, { quoted: msg });
         }
       } catch (e) {
         console.error('[auto-ia] Erro:', e.message);
