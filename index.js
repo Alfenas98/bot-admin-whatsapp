@@ -483,28 +483,10 @@ async function startBot() {
           const { autoResponder } = require('./lib/ai');
           const userName = msg.pushName || 'Usuário';
           
-          // Encontrar menções na resposta da IA e substituir IDs por nomes
           await sock.sendMessage(groupId, { text: '🤔 Pensando...' }, { quoted: msg });
           
-          let resposta = await autoResponder(userName, textContent);
-          
+          const resposta = await autoResponder(userName, textContent);
           if (resposta && resposta !== 'SKIP') {
-            // Tentar extrair ID numérico mencionado na resposta
-            const idMatch = resposta.match(/@(\d{10,20})/g);
-            if (idMatch) {
-              for (const idFull of idMatch) {
-                const idNum = idFull.replace('@', '');
-                // Buscar participante com esse ID
-                try {
-                  const metadata = await sock.groupMetadata(groupId);
-                  const participante = metadata.participants?.find(p => p.id.startsWith(idNum));
-                  if (participante) {
-                    resposta = resposta.replace(idFull, '@' + (participante.pushName || idNum));
-                  }
-                } catch (e) {}
-              }
-            }
-            
             await sock.sendMessage(groupId, { text: `🤖 ${resposta}` }, { quoted: msg });
           }
         } catch (e) {

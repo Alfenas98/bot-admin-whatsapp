@@ -7,7 +7,7 @@ module.exports = {
 
   async execute({ groupId, msg, reply, args, senderId }) {
     if (!process.env.GEMINI_API_KEY) {
-      return reply('⚠️ IA não configurada.');
+      return reply('⚠️ IA não configurada. Defina GEMINI_API_KEY no Railway.');
     }
 
     let textoPergunta = '';
@@ -27,7 +27,7 @@ module.exports = {
       } else if (textoRespondido) {
         textoPergunta = textoRespondido;
       } else {
-        return reply('⚠️ Responda a uma mensagem ou envie uma pergunta.');
+        return reply('⚠️ Responda a uma mensagem ou envie uma pergunta após o comando.');
       }
     } else {
       if (args.length === 0) {
@@ -51,28 +51,13 @@ module.exports = {
       const resposta = await chatWithMemory(senderId, userName, textoPergunta);
       
       if (resposta) {
-        // Tentar extrair ID numérico mencionado na resposta
-        const idMatch = resposta.match(/@(\d{10,20})/g);
-        if (idMatch) {
-          for (const idFull of idMatch) {
-            const idNum = idFull.replace('@', '');
-            try {
-              const metadata = await sock.groupMetadata(groupId);
-              const participante = metadata.participants?.find(p => p.id.startsWith(idNum));
-              if (participante) {
-                resposta = resposta.replace(idFull, '@' + (participante.pushName || idNum));
-              }
-            } catch (e) {}
-          }
-        }
-        
         await reply(`🤖 ${resposta}`);
       } else {
         await reply('⚠️ A IA não conseguiu responder. Tente novamente.');
       }
     } catch (err) {
       console.error('[pergunta] Erro:', err.message);
-      return reply('⚠️ Erro ao processar pergunta.');
+      await reply('⚠️ Erro ao processar pergunta.');
     }
   }
 };
