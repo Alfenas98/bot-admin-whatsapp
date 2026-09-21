@@ -4,7 +4,7 @@ module.exports = {
   name: 'level',
   aliases: ['rank', 'xp'],
   adminOnly: false,
-  async execute({ sock, groupId, senderId, reply }) {
+  async execute({ sock, groupId, senderId, msg, reply }) {
     const config = getGroupConfig(groupId);
     if (!config.levelSystem) return reply('⭐ O sistema de level está desativado neste grupo. Peça a um admin pra ativar com #levelsystem on');
 
@@ -16,20 +16,33 @@ module.exports = {
     const porcentagem = Math.min(Math.round((xpAtual / xpNecessario) * 100), 100);
     const patente = getPatente(nivel);
     
-    let msg = '⭐ *Seu Progresso*\n\n';
-    msg += `👤 Usuário: @${senderId.split('@')[0]}\n`;
-    msg += `🏆 Nível: *${nivel}*\n`;
-    msg += `🎖️ Patente: *${patente}*\n`;
-    msg += `🎯 XP: *${xpAtual} / ${xpNecessario}* (${porcentagem}%)\n`;
-    msg += `${progresso}\n\n`;
-    msg += `📨 Mensagens: *${user.mensagens || 0}*\n`;
-    msg += `🔥 Streak: *${user.streak || 0} mensagens*\n`;
-    msg += `📅 Dias consecutivos: *${user.diasConsecutivos || 0}*\n\n`;
-    msg += `_Faltam ${xpNecessario - xpAtual} XP para o próximo nível!_`;
+    // Buscar nome do usuário
+    let nomeExibir = null;
+    try {
+      const metadata = await sock.groupMetadata(groupId);
+      if (metadata?.participants) {
+        const participante = metadata.participants.find(p => p.id === senderId);
+        if (participante) {
+          nomeExibir = participante.pushName || participante.name || null;
+        }
+      }
+    } catch (e) {}
     
-    return await sock.sendMessage(groupId, {
-      text: msg,
-      mentions: [senderId]
-    });
+    if (!nomeExibir) {
+      nomeExibir = msg.pushName || senderId.split('@')[0];
+    }
+    
+    let msgFinal = '⭐ *Seu Progresso*\n\n';
+    msgFinal += `👤 Usuário: ${nomeExibir}\n`;
+    msgFinal += `🏆 Nível: *${nivel}*\n`;
+    msgFinal += `🎖️ Patente: *${patente}*\n`;
+    msgFinal += `🎯 XP: *${xpAtual} / ${xpNecessario}* (${porcentagem}%)\n`;
+    msgFinal += `${progresso}\n\n`;
+    msgFinal += `📨 Mensagens: *${user.mensagens || 0}*\n`;
+    msgFinal += `🔥 Streak: *${user.streak || 0} mensagens*\n`;
+    msgFinal += `📅 Dias consecutivos: *${user.diasConsecutivos || 0}*\n\n`;
+    msgFinal += `_Faltam ${xpNecessario - xpAtual} XP para o próximo nível!_`;
+    
+    return await reply(msgFinal);
   }
 };
