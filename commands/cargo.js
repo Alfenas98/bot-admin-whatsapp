@@ -54,7 +54,7 @@ module.exports = {
         msg += `${marcador} Nv ${p.nivel}: ${p.nome}\n`;
       }
       
-      // Enviar com menção
+      // Enviar com menção usando sock.sendMessage
       return await sock.sendMessage(groupId, {
         text: msg,
         mentions: [userId]
