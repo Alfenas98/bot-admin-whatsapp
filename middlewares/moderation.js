@@ -2,6 +2,7 @@ const { getGroupConfig } = require('../lib/database');
 const { isGroupAdminCached, getAdminIdsCached, invalidateGroupCache } = require('../lib/groupCache');
 const { registrarFigurinha } = require('../lib/floodTracker');
 const { registrarMensagem } = require('../lib/spamTracker');
+const { verificarPermissao } = require('../lib/permissoes');
 
 const GROUP_LINK_REGEX = /chat\.whatsapp\.com\/[A-Za-z0-9]+/i;
 const GENERIC_LINK_REGEX = /(https?:\/\/[^\s]+)|(www\.[^\s]+)/i;
@@ -71,6 +72,13 @@ async function runModeration(sock, msg, groupId, senderId, messageType, textCont
   }
 
   if (senderIsAdmin) return false;
+
+  // --- Verificar permissões por cargo ---
+  const permissao = verificarPermissao(groupId, senderId, messageType, textContent);
+  if (permissao.bloqueado) {
+    await deleteAndWarn(sock, groupId, msg, senderId, permissao.motivo);
+    return true;
+  }
 
   // --- Modo jogo: durante a espera e a partida, membros só podem mandar figurinha ---
   if (config.jogos && ['aguardando', 'jogando'].includes(config.jogos.estado)) {
