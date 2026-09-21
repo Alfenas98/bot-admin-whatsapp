@@ -15,7 +15,7 @@ const path = require('path');
 
 const { loadCommands } = require('./lib/commandLoader');
 const { runModeration } = require('./middlewares/moderation');
-const { getGroupConfig, setGroupConfig } = require('./lib/database');
+const { db, getGroupConfig, setGroupConfig } = require('./lib/database');
 const { salvarNome, verificarClone } = require('./lib/anticlone');
 const { storageDir } = require('./lib/storage');
 const { getAdminIdsCached, isGroupAdminCached, invalidateGroupCache } = require('./lib/groupCache');
@@ -367,12 +367,24 @@ async function startBot() {
     const configXP = getGroupConfig(groupId);
     if (configXP.levelSystem) {
       try {
+        const nivelAntigo = (db.get(['users', groupId, senderId]).value() || {}).nivel || 1;
         const resultadoXP = adicionarXP(groupId, senderId, 5, 'texto');
         if (resultadoXP && resultadoXP.subiuNivel) {
-          await sock.sendMessage(groupId, {
-            text: `🎉 @${senderId.split('@')[0]} subiu para o nível ${resultadoXP.nivel}!`,
-            mentions: [senderId]
-          });
+          // Verificar promoção de cargo
+          const { verificarPromocao } = require('./lib/cargos');
+          const promocao = verificarPromocao(groupId, senderId, nivelAntigo, resultadoXP.nivel);
+          
+          if (promocao.promovido) {
+            await sock.sendMessage(groupId, {
+              text: promocao.mensagem,
+              mentions: [senderId]
+            });
+          } else {
+            await sock.sendMessage(groupId, {
+              text: `🎉 @${senderId.split('@')[0]} subiu para o nível ${resultadoXP.nivel}!`,
+              mentions: [senderId]
+            });
+          }
         }
       } catch (e) {
         error('Erro ao adicionar XP', e.message);
