@@ -6,11 +6,10 @@ module.exports = {
   aliases: ['cargos', 'patente', 'patentes'],
   adminOnly: false,
 
-  async execute({ groupId, senderId, reply, args }) {
+  async execute({ sock, groupId, senderId, reply, args }) {
     const mencionados = args[0]?.replace('@', '').replace(/[^0-9]/g, '');
     
     let userId;
-    let userName;
     
     if (mencionados) {
       userId = mencionados.includes('@') ? mencionados : `${mencionados}@s.whatsapp.net`;
@@ -55,7 +54,11 @@ module.exports = {
         msg += `${marcador} Nv ${p.nivel}: ${p.nome}\n`;
       }
       
-      return await reply(msg);
+      // Enviar com menção
+      return await sock.sendMessage(groupId, {
+        text: msg,
+        mentions: [userId]
+      });
     } catch (err) {
       console.error('[cargo] Erro:', err.message);
       return reply('⚠️ Erro ao buscar informações.');
