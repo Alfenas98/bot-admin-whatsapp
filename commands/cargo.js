@@ -13,7 +13,6 @@ module.exports = {
     const mencionados = msg?.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
     
     if (args[0]) {
-      // Verificar se é uma menção por texto (@número)
       const arg = args[0].replace('@', '').replace(/[^0-9]/g, '');
       if (arg) {
         userId = arg.includes('@') ? arg : `${arg}@s.whatsapp.net`;
@@ -36,7 +35,7 @@ module.exports = {
       // Buscar nome do usuário
       let nomeExibir = null;
       
-      // Tentar buscar metadata do grupo
+      // 1. Tentar buscar metadata do grupo
       try {
         const metadata = await sock.groupMetadata(groupId);
         if (metadata?.participants) {
@@ -45,19 +44,25 @@ module.exports = {
             nomeExibir = participante.pushName || participante.name || null;
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('[cargo] Erro ao buscar metadata:', e.message);
+      }
       
-      // Se não encontrou nome, usar pushName da mensagem
+      // 2. Se não encontrou, usar pushName da mensagem (se for o mesmo usuário)
       if (!nomeExibir && userId === senderId) {
         nomeExibir = msg.pushName || null;
       }
       
-      // Fallback: usar o número do ID
+      // 3. Fallback: formatar o ID
       if (!nomeExibir) {
         const parts = userId.split('@');
         const numero = parts[0];
-        // Se for muito longo (lid), usar "Usuário"
-        nomeExibir = numero.length > 15 ? 'Usuário' : `@${numero}`;
+        // Se for muito longo ou parecer um ID interno, usar "Usuário"
+        if (numero.length > 15 || !numero.match(/^\d+$/)) {
+          nomeExibir = 'Usuário';
+        } else {
+          nomeExibir = `@${numero}`;
+        }
       }
       
       // Patentes disponíveis com níveis
