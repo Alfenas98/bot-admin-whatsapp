@@ -97,7 +97,29 @@
       "muted": [
         "5511999998888@s.whatsapp.net"
       ],
-      "blocklist": []
+      "blocklist": [],
+      "sorteioAtivo": false,
+      "sorteioTempo": null,
+      "sorteioPremio": null,
+      "sorteioParticipantes": [],
+      "sorteioTimeout": null,
+      "quotes": [],
+      "lembretes": [],
+      "metrics": {
+        "mensagensEnviadas": 0
+      },
+      "reacoesAutomaticas": {
+        "ativo": true,
+        "custom": {}
+      },
+      "caixaAnonima": {
+        "ativo": false,
+        "historico": []
+      },
+      "membros": [],
+      "cargos": {
+        "ativo": true
+      }
     }
   },
   "users": {},
