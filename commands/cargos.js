@@ -24,7 +24,10 @@ module.exports = {
     const acao = args[0].toLowerCase();
     
     if (acao === 'on' || acao === 'ativar') {
+      console.log(`[cargos] Ativando cargos para grupo ${groupId}`);
       setGroupConfig(groupId, 'cargos.ativo', true);
+      const config = getGroupConfig(groupId);
+      console.log(`[cargos] Config após ativar:`, config.cargos);
       return reply('✅ Sistema de cargos ativado!');
     } else if (acao === 'off' || acao === 'desativar') {
       setGroupConfig(groupId, 'cargos.ativo', false);
