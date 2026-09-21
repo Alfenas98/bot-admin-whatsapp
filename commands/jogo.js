@@ -12,13 +12,16 @@ module.exports = {
     const aliases = {
       'en+18': 2,
       'em+18': 2,
+      'nm+18': 2,
       'en18': 2,
       'em18': 2,
+      'nm18': 2,
       'eununca18': 2,
       'eu-nunca-18': 2,
       'eu_nunca_18': 2,
       'en-18': 2,
       'em-18': 2,
+      'nm-18': 2,
       'verdade': 3,
       'verdade-ou-desafio': 3,
       'vod': 3,
@@ -30,7 +33,6 @@ module.exports = {
       'qualfoi': 5,
       'qual-foi': 5,
       'enquete': 6,
-      'enquete-polemica': 6,
       'enquete-polemica': 6,
     };
     
