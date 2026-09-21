@@ -5,7 +5,7 @@ const BASE_URL = 'https://api.api-futebol.com.br/v1';
 
 module.exports = {
   name: 'placar',
-  aliases: ['jogo', 'score'],
+  aliases: ['score'],
   adminOnly: false,
 
   async execute({ sock, groupId, args, reply }) {

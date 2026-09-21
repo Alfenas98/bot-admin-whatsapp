@@ -5,7 +5,9 @@
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "jest --coverage",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",
@@ -18,6 +20,15 @@
     "sharp": "^0.33.5"
   },
   "devDependencies": {
-    "@railway/cli": "^5.57.2"
+    "@railway/cli": "^5.57.2",
+    "jest": "^29.7.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "lib/**/*.js",
+      "commands/**/*.js"
+    ]
   }
 }

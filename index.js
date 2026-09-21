@@ -36,6 +36,12 @@ const { checkRateLimit, enqueue, scheduleExecution } = require('./lib/rateLimite
 const { pesquisar } = require('./lib/ai');
 const { processarReacoes } = require('./lib/reactions');
 const { iniciarCronTop10 } = require('./lib/cronTop10');
+const { iniciarBackupAutomatico } = require('./lib/backup');
+const { gerarRelatorioSemanal } = require('./lib/weeklyReport');
+const { info, warn, error } = require('./lib/logger');
+const cache = require('./lib/cache');
+const { corrigirGrupo } = require('./lib/validator');
+const { addCoins } = require('./lib/economy');
 
 const commands = loadCommands();
 
@@ -168,9 +174,31 @@ async function startBot() {
       adminCache.clear();
       inc('connectionEvents');
       console.log('✅ Bot conectado com sucesso!');
+      info('Bot conectado com sucesso');
       
-      // Iniciar cron de Top 10
+      // Iniciar sistemas automáticos
       iniciarCronTop10(sock);
+      iniciarBackupAutomatico();
+      
+      // Iniciar relatório semanal (domingos às 10:00)
+      setInterval(() => {
+        const agora = new Date();
+        if (agora.getDay() === 0 && agora.getHours() === 10 && agora.getMinutes() === 0) {
+          info('Enviando relatório semanal');
+          // Enviar para todos os grupos com levelSystem ativo
+          const grupos = db.get('groups').value() || {};
+          for (const [groupId, config] of Object.entries(grupos)) {
+            if (config.levelSystem) {
+              try {
+                const relatorio = gerarRelatorioSemanal(groupId);
+                sock.sendMessage(groupId, { text: relatorio });
+              } catch (e) {
+                error(`Erro ao enviar relatório para ${groupId}`, e.message);
+              }
+            }
+          }
+        }
+      }, 60000); // Verificar a cada minuto
     }
   });
 
@@ -323,6 +351,7 @@ async function startBot() {
     if (msg.key.fromMe) return;
 
     const senderId = msg.key.participant || msg.key.remoteJid;
+    const senderName = msg.pushName || senderId.split('@')[0];
     const conteudoReal = desembrulharMensagem(msg.message);
     const messageType = Object.keys(conteudoReal)[0];
     const textContent =
@@ -330,6 +359,25 @@ async function startBot() {
       conteudoReal.extendedTextMessage?.text ||
       conteudoReal.imageMessage?.caption ||
       '';
+
+    // Corrigir dados do grupo
+    corrigirGrupo(groupId);
+
+    // Registrar XP (se levelSystem ativo)
+    const configXP = getGroupConfig(groupId);
+    if (configXP.levelSystem) {
+      try {
+        const resultadoXP = adicionarXP(groupId, senderId, 5, 'texto');
+        if (resultadoXP && resultadoXP.subiuNivel) {
+          await sock.sendMessage(groupId, {
+            text: `🎉 @${senderId.split('@')[0]} subiu para o nível ${resultadoXP.nivel}!`,
+            mentions: [senderId]
+          });
+        }
+      } catch (e) {
+        error('Erro ao adicionar XP', e.message);
+      }
+    }
 
     if (process.env.DEBUG === 'true') {
       console.log('[debug] tipo bruto:', Object.keys(msg.message)[0], '| tipo desembrulhado:', messageType, '| remetente:', senderId);
