@@ -375,6 +375,10 @@ async function startBot() {
           const promocao = verificarPromocao(groupId, senderId, nivelAntigo, resultadoXP.nivel);
           
           if (promocao.promovido) {
+            // Dar coins como prêmio
+            const { addCoins } = require('./lib/economy');
+            addCoins(groupId, senderId, promocao.coins);
+            
             await sock.sendMessage(groupId, {
               text: promocao.mensagem,
               mentions: [senderId]
