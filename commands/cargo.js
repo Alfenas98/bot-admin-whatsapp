@@ -1,5 +1,6 @@
 const { getPatente } = require('../lib/xp');
 const { db } = require('../lib/database');
+const { buscarNomeUsuario, formatarIdUsuario } = require('../lib/userUtils');
 
 module.exports = {
   name: 'cargo',
@@ -33,36 +34,11 @@ module.exports = {
       const patente = getPatente(nivel);
       
       // Buscar nome do usuário
-      let nomeExibir = null;
+      let nomeExibir = await buscarNomeUsuario(sock, groupId, userId, null);
       
-      // 1. Tentar buscar metadata do grupo
-      try {
-        const metadata = await sock.groupMetadata(groupId);
-        if (metadata?.participants) {
-          const participante = metadata.participants.find(p => p.id === userId);
-          if (participante) {
-            nomeExibir = participante.pushName || participante.name || null;
-          }
-        }
-      } catch (e) {
-        console.error('[cargo] Erro ao buscar metadata:', e.message);
-      }
-      
-      // 2. Se não encontrou, usar pushName da mensagem (se for o mesmo usuário)
-      if (!nomeExibir && userId === senderId) {
-        nomeExibir = msg.pushName || null;
-      }
-      
-      // 3. Fallback: formatar o ID
+      // Fallback: formatar o ID
       if (!nomeExibir) {
-        const parts = userId.split('@');
-        const numero = parts[0];
-        // Se for muito longo ou parecer um ID interno, usar "Usuário"
-        if (numero.length > 15 || !numero.match(/^\d+$/)) {
-          nomeExibir = 'Usuário';
-        } else {
-          nomeExibir = `@${numero}`;
-        }
+        nomeExibir = formatarIdUsuario(userId);
       }
       
       // Patentes disponíveis com níveis

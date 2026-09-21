@@ -1,5 +1,6 @@
 const { getGroupConfig } = require('../lib/database');
 const { getUser, xpParaProximoNivel, barraProgresso, getPatente } = require('../lib/xp');
+const { buscarNomeUsuario, formatarIdUsuario } = require('../lib/userUtils');
 module.exports = {
   name: 'level',
   aliases: ['rank', 'xp'],
@@ -17,19 +18,9 @@ module.exports = {
     const patente = getPatente(nivel);
     
     // Buscar nome do usuário
-    let nomeExibir = null;
-    try {
-      const metadata = await sock.groupMetadata(groupId);
-      if (metadata?.participants) {
-        const participante = metadata.participants.find(p => p.id === senderId);
-        if (participante) {
-          nomeExibir = participante.pushName || participante.name || null;
-        }
-      }
-    } catch (e) {}
-    
+    let nomeExibir = await buscarNomeUsuario(sock, groupId, senderId, null);
     if (!nomeExibir) {
-      nomeExibir = msg.pushName || senderId.split('@')[0];
+      nomeExibir = formatarIdUsuario(senderId);
     }
     
     let msgFinal = '⭐ *Seu Progresso*\n\n';
