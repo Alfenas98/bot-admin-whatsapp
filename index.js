@@ -406,6 +406,13 @@ async function startBot() {
     // Reações automáticas
     await processarReacoes(sock, groupId, msg.key, textContent, getGroupConfig(groupId));
 
+    // Bigphone - verificar se é resposta ao telefone tocando
+    const { isAguardandoResposta, processarResposta } = require('./lib/bigphone');
+    if (isAguardandoResposta()) {
+      await processarResposta(sock, groupId, senderId);
+      return; // Não processar como comando
+    }
+    
     // Verificar se é resposta a uma mensagem do bot (auto-chat)
     const contextInfo = msg.message?.extendedTextMessage?.contextInfo;
     if (contextInfo?.quotedMessage) {
