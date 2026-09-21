@@ -8,42 +8,39 @@ module.exports = {
 
   async execute({ sock, groupId, reply }) {
     try {
+      // Acessar todos os usuários
       const todosUsuarios = db.get('users').value();
-      const grupo = todosUsuarios?.[groupId];
+      
+      if (!todosUsuarios || typeof todosUsuarios !== 'object') {
+        return reply('📊 Nenhum dado de ranking encontrado.');
+      }
+
+      // Acessar usuários do grupo específico
+      const grupo = todosUsuarios[groupId];
       
       if (!grupo) {
-        return reply('📊 Nenhum dado de ranking encontrado. Use #levelsystem on para ativar.');
+        return reply('📊 Nenhum dado de ranking encontrado para este grupo.');
       }
 
-      let dadosGrupo = grupo;
+      // Converter para array de [id, dados]
+      let entradas;
       if (Array.isArray(grupo)) {
-        dadosGrupo = {};
-        for (const item of grupo) {
-          if (item && item.id) {
-            dadosGrupo[item.id] = item;
-          }
-        }
-      }
-      
-      if (typeof dadosGrupo !== 'object') {
-        return reply('📊 Formato de dados incorreto.');
-      }
-
-      const entradas = Object.entries(dadosGrupo);
-      
-      if (entradas.length === 0) {
-        return reply('📊 Nenhum membro encontrado no ranking.');
+        // Se for array, assumir que cada item tem { id, ... }
+        entradas = grupo.filter(item => item && item.id).map(item => [item.id, item]);
+      } else if (typeof grupo === 'object') {
+        entradas = Object.entries(grupo);
+      } else {
+        return reply('📊 Formato de dados inválido.');
       }
 
       const lista = [];
       
       for (const item of entradas) {
-        if (!Array.isArray(item) || item.length < 2) continue;
+        if (!Array.isArray(item) || item.length !== 2) continue;
         
-        const id = item[0];
-        const dados = item[1];
+        const [id, dados] = item;
         
-        if (!dados || typeof dados !== 'object') continue;
+        if (!dados) continue;
         
         const mensagens = dados.mensagens || 0;
         if (mensagens <= 0) continue;
@@ -51,13 +48,7 @@ module.exports = {
         const nivel = dados.nivel || 1;
         const xp = dados.xp || 0;
         
-        lista.push({
-          id,
-          nivel,
-          xp,
-          mensagens,
-          pontuacao: nivel * 10000 + xp
-        });
+        lista.push({ id, nivel, xp, mensagens, pontuacao: nivel * 10000 + xp });
       }
 
       if (lista.length === 0) {
@@ -67,46 +58,30 @@ module.exports = {
       lista.sort((a, b) => b.pontuacao - a.pontuacao);
       const top10 = lista.slice(0, 10);
 
-      // Buscar nomes e JIDs corretos
-      const participantes = {};
+      // Buscar nomes
+      const nomes = {};
       try {
         const metadata = await sock.groupMetadata(groupId);
-        if (metadata && metadata.participants) {
+        if (metadata?.participants) {
           for (const p of metadata.participants) {
-            if (p && p.id) {
-              // Extrair número do JID
-              const numero = p.id.split('@')[0].split(':')[0];
-              participantes[numero] = {
-                nome: p.pushName || p.id.split('@')[0],
-                jid: p.id
-              };
+            if (p?.id) {
+              nomes[p.id] = p.pushName || p.id.split('@')[0];
             }
           }
         }
-      } catch (e) {
-        console.log('[top10] Erro metadata:', e.message);
-      }
+      } catch (e) {}
 
       let texto = '';
       const mencoes = [];
       
       for (let i = 0; i < top10.length; i++) {
-        const dados = top10[i];
-        const id = dados.id;
-        
-        // Extrair número do ID
-        const numero = String(id).split('@')[0].split(':')[0];
-        
-        // Buscar participante pelo número
-        const participante = participantes[numero];
-        const nome = participante?.nome || numero;
-        const jid = participante?.jid || `${numero}@s.whatsapp.net`;
-        
-        const patente = getPatente(dados.nivel);
-        
+        const { id, nivel, mensagens } = top10[i];
+        const nome = nomes[id] || id.split('@')[0];
+        const patente = getPatente(nivel);
+        const jid = id.includes('@') ? id : `${id}@s.whatsapp.net`;
         mencoes.push(jid);
         
-        texto += `${i + 1}. @${numero} - ${patente} (Nv ${dados.nivel}, ${dados.mensagens} msgs)\n`;
+        texto += `${i + 1}. @${id.split('@')[0]} - ${patente} (Nv ${nivel}, ${mensagens} msgs)\n`;
       }
 
       return await sock.sendMessage(groupId, {
@@ -114,9 +89,8 @@ module.exports = {
         mentions: mencoes
       });
     } catch (err) {
-      console.error('[top10] Erro completo:', err.message);
-      console.error('[top10] Stack:', err.stack);
-      return reply('⚠️ Erro ao gerar ranking. Tente novamente.');
+      console.error('[top10] Erro:', err.message);
+      return reply('⚠️ Erro ao gerar ranking.');
     }
   }
 };

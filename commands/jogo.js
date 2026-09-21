@@ -6,7 +6,41 @@ module.exports = {
   name: 'jogo',
   adminOnly: true,
   async execute({ sock, groupId, args, reply }) {
-    const numero = parseInt(args[0], 10);
+    let numero = args[0];
+    
+    // Aliases para jogos específicos (variações com e sem +)
+    const aliases = {
+      'en+18': 2,
+      'em+18': 2,
+      'en18': 2,
+      'em18': 2,
+      'eununca18': 2,
+      'eu-nunca-18': 2,
+      'eu_nunca_18': 2,
+      'en-18': 2,
+      'em-18': 2,
+      'verdade': 3,
+      'verdade-ou-desafio': 3,
+      'vod': 3,
+      'verdade18': 4,
+      'verdadeou-desafio18': 4,
+      'verdade-ou-desafio-18': 4,
+      'vod18': 4,
+      'verdade-ou-desafio+18': 4,
+      'qualfoi': 5,
+      'qual-foi': 5,
+      'enquete': 6,
+      'enquete-polemica': 6,
+      'enquete-polemica': 6,
+    };
+    
+    // Se for um alias, converter para número
+    if (numero && aliases[numero.toLowerCase()]) {
+      numero = aliases[numero.toLowerCase()];
+    } else {
+      numero = parseInt(numero, 10);
+    }
+    
     const jogoBase = listaJogos[numero - 1];
     if (!jogoBase) return reply('Número de jogo inválido. Use #jogos pra ver a lista.');
 
@@ -28,7 +62,6 @@ module.exports = {
       }
     }
 
-    // usa a lista de perguntas personalizada se existir, senão a padrão do jogo
     const perguntasCustom = config.jogos.perguntasCustom[jogoBase.id] || [];
     const jogo = {
       ...jogoBase,
