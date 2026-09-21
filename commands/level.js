@@ -4,7 +4,7 @@ module.exports = {
   name: 'level',
   aliases: ['rank', 'xp'],
   adminOnly: false,
-  async execute({ groupId, senderId, reply }) {
+  async execute({ sock, groupId, senderId, reply }) {
     const config = getGroupConfig(groupId);
     if (!config.levelSystem) return reply('⭐ O sistema de level está desativado neste grupo. Peça a um admin pra ativar com #levelsystem on');
 
@@ -17,6 +17,7 @@ module.exports = {
     const patente = getPatente(nivel);
     
     let msg = '⭐ *Seu Progresso*\n\n';
+    msg += `👤 Usuário: @${senderId.split('@')[0]}\n`;
     msg += `🏆 Nível: *${nivel}*\n`;
     msg += `🎖️ Patente: *${patente}*\n`;
     msg += `🎯 XP: *${xpAtual} / ${xpNecessario}* (${porcentagem}%)\n`;
@@ -26,6 +27,9 @@ module.exports = {
     msg += `📅 Dias consecutivos: *${user.diasConsecutivos || 0}*\n\n`;
     msg += `_Faltam ${xpNecessario - xpAtual} XP para o próximo nível!_`;
     
-    return reply(msg);
+    return await sock.sendMessage(groupId, {
+      text: msg,
+      mentions: [senderId]
+    });
   }
 };
