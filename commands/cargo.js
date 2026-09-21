@@ -1,6 +1,5 @@
 const { getPatente } = require('../lib/xp');
 const { db } = require('../lib/database');
-const { buscarNomeUsuario, formatarIdUsuario } = require('../lib/userUtils');
 
 module.exports = {
   name: 'cargo',
@@ -9,6 +8,7 @@ module.exports = {
 
   async execute({ sock, groupId, senderId, msg, reply, args }) {
     let userId;
+    let isSelf = true;
     
     // Verificar se há menção na mensagem
     const mencionados = msg?.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
@@ -17,15 +17,18 @@ module.exports = {
       const arg = args[0].replace('@', '').replace(/[^0-9]/g, '');
       if (arg) {
         userId = arg.includes('@') ? arg : `${arg}@s.whatsapp.net`;
+        isSelf = false;
       }
     }
     
     if (!userId && mencionados.length > 0) {
       userId = mencionados[0];
+      isSelf = false;
     }
     
     if (!userId) {
       userId = senderId;
+      isSelf = true;
     }
     
     try {
@@ -34,11 +37,46 @@ module.exports = {
       const patente = getPatente(nivel);
       
       // Buscar nome do usuário
-      let nomeExibir = await buscarNomeUsuario(sock, groupId, userId, null);
+      let nomeExibir = null;
       
-      // Fallback: formatar o ID
+      // 1. Se for o próprio usuário, usar pushName da mensagem
+      if (isSelf && msg.pushName) {
+        nomeExibir = msg.pushName;
+      }
+      
+      // 2. Tentar buscar metadata do grupo
       if (!nomeExibir) {
-        nomeExibir = formatarIdUsuario(userId);
+        try {
+          const metadata = await sock.groupMetadata(groupId);
+          if (metadata?.participants) {
+            // Buscar por ID completo primeiro
+            let participante = metadata.participants.find(p => p.id === userId);
+            
+            // Se não encontrar, buscar apenas pelo número (antes do @)
+            if (!participante) {
+              const userIdNum = userId.split('@')[0];
+              participante = metadata.participants.find(p => p.id.startsWith(userIdNum));
+            }
+            
+            if (participante) {
+              nomeExibir = participante.pushName || participante.name || null;
+            }
+          }
+        } catch (e) {
+          console.error('[cargo] Erro ao buscar metadata:', e.message);
+        }
+      }
+      
+      // 3. Fallback: formatar o ID
+      if (!nomeExibir) {
+        const partes = userId.split('@');
+        const numero = partes[0];
+        // Se for um ID interno do WhatsApp (LID), retornar "Usuário"
+        if (numero.length > 15 || !numero.match(/^\d+$/)) {
+          nomeExibir = 'Usuário';
+        } else {
+          nomeExibir = numero;
+        }
       }
       
       // Patentes disponíveis com níveis
