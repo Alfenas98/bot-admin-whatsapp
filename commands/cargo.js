@@ -49,15 +49,11 @@ module.exports = {
         try {
           const metadata = await sock.groupMetadata(groupId);
           if (metadata?.participants) {
-            // Buscar por ID completo primeiro
             let participante = metadata.participants.find(p => p.id === userId);
-            
-            // Se não encontrar, buscar apenas pelo número (antes do @)
             if (!participante) {
               const userIdNum = userId.split('@')[0];
               participante = metadata.participants.find(p => p.id.startsWith(userIdNum));
             }
-            
             if (participante) {
               nomeExibir = participante.pushName || participante.name || null;
             }
@@ -71,8 +67,13 @@ module.exports = {
       if (!nomeExibir) {
         const partes = userId.split('@');
         const numero = partes[0];
-        // Se for um ID interno do WhatsApp (LID), retornar "Usuário"
-        if (numero.length > 15 || !numero.match(/^\d+$/)) {
+        const isTelefoneValido = /^\d{13}$/.test(numero) && numero.startsWith('55');
+        
+        if (isTelefoneValido) {
+          const ddd = numero.substring(2, 4);
+          const num = numero.substring(4);
+          nomeExibir = `(${ddd}) ${num.substring(0, 5)}-${num.substring(5)}`;
+        } else if (numero.length > 12 || !numero.match(/^\d+$/)) {
           nomeExibir = 'Usuário';
         } else {
           nomeExibir = numero;
@@ -111,7 +112,11 @@ module.exports = {
         msgFinal += `${marcador} Nv ${p.nivel}: ${p.nome}\n`;
       }
       
-      return await reply(msgFinal);
+      // Enviar com menção usando sock.sendMessage
+      return await sock.sendMessage(groupId, {
+        text: msgFinal,
+        mentions: [userId]
+      });
     } catch (err) {
       console.error('[cargo] Erro:', err.message);
       return reply('⚠️ Erro ao buscar informações.');
