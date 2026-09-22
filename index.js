@@ -403,6 +403,10 @@ async function startBot() {
 
     registrarAtividade(groupId, senderId);
 
+    // Salvar pushName no banco
+    const { salvarNome } = require('./lib/userUtils');
+    await salvarNome(groupId, senderId, msg.pushName || senderId.split('@')[0]);
+
     // Reações automáticas
     await processarReacoes(sock, groupId, msg.key, textContent, getGroupConfig(groupId));
 

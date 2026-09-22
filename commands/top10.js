@@ -1,5 +1,6 @@
 const { db } = require('../lib/database');
 const { getPatente } = require('../lib/xp');
+const { buscarNomeUsuario, formatarIdUsuario } = require('../lib/userUtils');
 
 module.exports = {
   name: 'top10',
@@ -33,57 +34,22 @@ module.exports = {
       lista.sort((a, b) => b.pontuacao - a.pontuacao);
       const top10 = lista.slice(0, 10);
 
-      // Buscar metadata
-      const metadata = await sock.groupMetadata(groupId);
-      const participantes = metadata?.participants || [];
-      
-      // Criar mapa: número (apenas dígitos) -> pushName
-      const mapaPorNumero = {};
-      
-      console.log('[top10] === DEBUG PARTICIPANTES ===');
-      for (const p of participantes) {
-        // Extrair apenas números do ID
-        const numero = p.id.split('@')[0].split(':')[0].replace(/\D/g, '');
-        const nome = p.pushName || p.name || numero;
-        mapaPorNumero[numero] = nome;
-        console.log(`[top10] Meta: ${p.id} -> Numero: ${numero} -> Nome: ${nome}`);
-      }
-      
-      console.log('[top10] === DEBUG BANCO ===');
-      for (const { id } of top10) {
-        const idNumeros = String(id).split('@')[0].split(':')[0].replace(/\D/g, '');
-        console.log(`[top10] Banco: ${id} -> Numeros: ${idNumeros}`);
-      }
-
       let texto = '';
       const mencoes = [];
       
       for (let i = 0; i < top10.length; i++) {
         const { id, nivel, mensagens } = top10[i];
         
-        // Extrair apenas números do ID do banco
-        const idNumeros = String(id).split('@')[0].split(':')[0].replace(/\D/g, '');
+        // Buscar nome: primeiro no banco, depois na metadata
+        let nome = await buscarNomeUsuario(sock, groupId, id, null);
         
-        // Buscar nome
-        let nome = mapaPorNumero[idNumeros];
-        
-        // Se não encontrou, tentar partial match
+        // Fallback: formatar ID
         if (!nome) {
-          const encontrado = Object.entries(mapaPorNumero).find(([num, _]) => 
-            num.startsWith(idNumeros) || idNumeros.startsWith(num)
-          );
-          if (encontrado) {
-            nome = encontrado[1];
-          }
+          nome = formatarIdUsuario(id);
         }
         
-        // Fallback
-        if (!nome) {
-          nome = 'Usuário';
-        }
-        
-        const mentionId = `${idNumeros}@s.whatsapp.net`;
-        mencoes.push(mentionId);
+        // Para menção, usar o ID original
+        mencoes.push(id);
         
         texto += `${i + 1}. ${nome} - ${getPatente(nivel)} (Nv ${nivel}, ${mensagens} msgs)\n`;
       }
