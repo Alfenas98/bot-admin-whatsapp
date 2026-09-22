@@ -1,6 +1,5 @@
 const { db } = require('../lib/database');
 const { getPatente } = require('../lib/xp');
-const { buscarNomeUsuario, formatarIdUsuario } = require('../lib/userUtils');
 
 module.exports = {
   name: 'top10',
@@ -15,43 +14,36 @@ module.exports = {
         return reply('📊 Nenhum dado de ranking encontrado para este grupo.');
       }
 
-      const entradas = Object.entries(grupo);
-
-      const lista = [];
-      for (const [id, dados] of entradas) {
-        if (!dados) continue;
-        const mensagens = dados.mensagens || 0;
-        if (mensagens <= 0) continue;
-        const nivel = dados.nivel || 1;
-        const xp = dados.xp || 0;
-        lista.push({ id, nivel, xp, mensagens, pontuacao: nivel * 10000 + xp });
-      }
+      const lista = Object.entries(grupo)
+        .filter(([_, dados]) => dados && dados.mensagens > 0)
+        .map(([id, dados]) => ({
+          id,
+          nivel: dados.nivel || 1,
+          mensagens: dados.mensagens || 0,
+          nome: dados.nome || null
+        }))
+        .sort((a, b) => (b.nivel * 10000 + b.mensagens) - (a.nivel * 10000 + a.mensagens))
+        .slice(0, 10);
 
       if (lista.length === 0) {
         return reply('📊 Nenhum membro com mensagens encontrado.');
       }
 
-      lista.sort((a, b) => b.pontuacao - a.pontuacao);
-      const top10 = lista.slice(0, 10);
-
       let texto = '';
       const mencoes = [];
       
-      for (let i = 0; i < top10.length; i++) {
-        const { id, nivel, mensagens } = top10[i];
+      for (let i = 0; i < lista.length; i++) {
+        const { id, nivel, mensagens, nome } = lista[i];
         
-        // Buscar nome: primeiro no banco, depois na metadata
-        let nome = await buscarNomeUsuario(sock, groupId, id, null);
+        // Formatar ID: extrair número antes de @lid
+        const idNumeros = String(id).split('@')[0].split(':')[0];
         
-        // Fallback: formatar ID
-        if (!nome) {
-          nome = formatarIdUsuario(id);
-        }
+        // Usar nome se disponível, senão mostrar número
+        const displayNome = nome || idNumeros;
         
-        // Para menção, usar o ID original
-        mencoes.push(id);
-        
-        texto += `${i + 1}. ${nome} - ${getPatente(nivel)} (Nv ${nivel}, ${mensagens} msgs)\n`;
+        // Mencionar pelo número
+        mencoes.push(`${idNumeros}@s.whatsapp.net`);
+        texto += `${i + 1}. ${displayNome} - ${getPatente(nivel)} (Nv ${nivel}, ${mensagens} msgs)\n`;
       }
 
       return await sock.sendMessage(groupId, {

@@ -1,6 +1,5 @@
 const { db } = require('../lib/database');
 const { getPatente } = require('../lib/xp');
-const { buscarNomeUsuario, formatarIdUsuario } = require('../lib/userUtils');
 
 module.exports = {
   name: 'rankdiario',
@@ -14,7 +13,8 @@ module.exports = {
       .map(([id, dados]) => ({
         id,
         nivel: dados.nivel || 1,
-        mensagens: dados.mensagens || 0
+        mensagens: dados.mensagens || 0,
+        nome: dados.nome || null
       }))
       .filter(u => u.mensagens > 0)
       .sort((a, b) => b.mensagens - a.mensagens)
@@ -27,14 +27,12 @@ module.exports = {
     const mencoes = [];
     const linhas = [];
     
-    for (const { id, nivel, mensagens } of lista) {
-      let nome = await buscarNomeUsuario(sock, groupId, id, null);
-      if (!nome) {
-        nome = formatarIdUsuario(id);
-      }
+    for (const { id, nivel, mensagens, nome } of lista) {
+      const idNumeros = String(id).split('@')[0].split(':')[0];
+      const displayNome = nome || idNumeros;
       
-      mencoes.push(id);
-      linhas.push(`${linhas.length + 1}. ${nome} — ${getPatente(nivel)} (${mensagens} msgs)`);
+      mencoes.push(`${idNumeros}@s.whatsapp.net`);
+      linhas.push(`${linhas.length + 1}. ${displayNome} — ${getPatente(nivel)} (${mensagens} msgs)`);
     }
     
     return await sock.sendMessage(groupId, {
