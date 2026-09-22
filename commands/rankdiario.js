@@ -23,34 +23,31 @@ module.exports = {
       return reply('📊 Nenhuma mensagem registrada hoje. Seja o primeiro a participar!');
     }
     
-    let metadata;
-    try {
-      metadata = await sock.groupMetadata(groupId);
-    } catch (e) {}
+    const metadata = await sock.groupMetadata(groupId);
+    const participantes = metadata?.participants || [];
     
-    const participantesMap = {};
-    if (metadata?.participants) {
-      for (const p of metadata.participants) {
-        if (p?.id) {
-          participantesMap[p.id] = p.pushName || p.name || p.id.split('@')[0];
-        }
-      }
+    // Criar mapa: numero -> pushName
+    const mapaParticipantes = {};
+    for (const p of participantes) {
+      const numero = p.id.split('@')[0].split(':')[0];
+      mapaParticipantes[numero] = p.pushName || p.name || numero;
     }
     
     const mencoes = [];
     const linhas = [];
     
     for (const { id, nivel, mensagens } of lista) {
-      let nome = participantesMap[id];
+      const idNumeros = String(id).split('@')[0].split(':')[0];
+      
+      let nome = mapaParticipantes[idNumeros];
       if (!nome) {
-        const numeroBase = String(id).split('@')[0].split(':')[0];
-        const encontrado = Object.entries(participantesMap).find(([jid, _]) => 
-          jid.startsWith(numeroBase) || numeroBase.startsWith(jid.split('@')[0].split(':')[0])
+        const encontrado = Object.entries(mapaParticipantes).find(([num, _]) => 
+          num.startsWith(idNumeros) || idNumeros.startsWith(num)
         );
-        nome = encontrado ? encontrado[1] : formatarTelefone(numeroBase);
+        nome = encontrado ? encontrado[1] : 'Usuário';
       }
       
-      mencoes.push(id.includes('@') ? id : `${id}@s.whatsapp.net`);
+      mencoes.push(`${idNumeros}@s.whatsapp.net`);
       linhas.push(`${linhas.length + 1}. ${nome} — ${getPatente(nivel)} (${mensagens} msgs)`);
     }
     
@@ -60,16 +57,3 @@ module.exports = {
     });
   }
 };
-
-function formatarTelefone(numero) {
-  if (!numero) return 'Desconhecido';
-  const limpo = String(numero).replace(/\D/g, '');
-  if (limpo.length > 15 || !/^\d+$/.test(limpo)) return 'Usuário';
-  if (limpo.length === 13 && limpo.startsWith('55')) {
-    const ddd = limpo.substring(2, 4);
-    const num = limpo.substring(4);
-    return `(${ddd}) *****-${num.substring(num.length - 4)}`;
-  }
-  if (limpo.length > 4) return `****${limpo.substring(limpo.length - 4)}`;
-  return limpo;
-}

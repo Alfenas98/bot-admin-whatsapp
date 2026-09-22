@@ -33,18 +33,16 @@ module.exports = {
       lista.sort((a, b) => b.pontuacao - a.pontuacao);
       const top10 = lista.slice(0, 10);
 
-      // Buscar nomes dos participantes
-      const nomes = {};
-      try {
-        const metadata = await sock.groupMetadata(groupId);
-        if (metadata?.participants) {
-          for (const p of metadata.participants) {
-            if (p?.id) {
-              nomes[p.id] = p.pushName || p.id.split('@')[0];
-            }
-          }
-        }
-      } catch (e) {}
+      // Buscar metadata do grupo
+      const metadata = await sock.groupMetadata(groupId);
+      const participantes = metadata?.participants || [];
+      
+      // Criar mapa: numero (sem @) -> pushName
+      const mapaParticipantes = {};
+      for (const p of participantes) {
+        const numero = p.id.split('@')[0].split(':')[0];
+        mapaParticipantes[numero] = p.pushName || p.name || numero;
+      }
 
       let texto = '';
       const mencoes = [];
@@ -52,18 +50,26 @@ module.exports = {
       for (let i = 0; i < top10.length; i++) {
         const { id, nivel, mensagens } = top10[i];
         
-        // Buscar nome do usuário
-        let nome = nomes[id];
+        // Extrair número do ID do banco
+        const idNumeros = String(id).split('@')[0].split(':')[0];
+        
+        // Buscar nome
+        let nome = mapaParticipantes[idNumeros];
+        
         if (!nome) {
-          // Tentar buscar pelo número base
-          const numeroBase = String(id).split('@')[0].split(':')[0];
-          const encontrado = Object.entries(nomes).find(([jid, _]) => 
-            jid.startsWith(numeroBase) || numeroBase.startsWith(jid.split('@')[0].split(':')[0])
+          // Tentar buscar qualquer participante que comece com esse número
+          const encontrado = Object.entries(mapaParticipantes).find(([num, _]) => 
+            num.startsWith(idNumeros) || idNumeros.startsWith(num)
           );
-          nome = encontrado ? encontrado[1] : formatarTelefone(numeroBase);
+          nome = encontrado ? encontrado[1] : null;
         }
         
-        mencoes.push(id);
+        if (!nome) {
+          // Último recurso: mostrar "Usuário"
+          nome = 'Usuário';
+        }
+        
+        mencoes.push(`${idNumeros}@s.whatsapp.net`);
         texto += `${i + 1}. ${nome} - ${getPatente(nivel)} (Nv ${nivel}, ${mensagens} msgs)\n`;
       }
 
@@ -77,16 +83,3 @@ module.exports = {
     }
   }
 };
-
-function formatarTelefone(numero) {
-  if (!numero) return 'Desconhecido';
-  const limpo = String(numero).replace(/\D/g, '');
-  if (limpo.length > 15 || !/^\d+$/.test(limpo)) return 'Usuário';
-  if (limpo.length === 13 && limpo.startsWith('55')) {
-    const ddd = limpo.substring(2, 4);
-    const num = limpo.substring(4);
-    return `(${ddd}) *****-${num.substring(num.length - 4)}`;
-  }
-  if (limpo.length > 4) return `****${limpo.substring(limpo.length - 4)}`;
-  return limpo;
-}
