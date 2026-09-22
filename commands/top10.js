@@ -33,15 +33,26 @@ module.exports = {
       lista.sort((a, b) => b.pontuacao - a.pontuacao);
       const top10 = lista.slice(0, 10);
 
-      // Buscar metadata do grupo
+      // Buscar metadata
       const metadata = await sock.groupMetadata(groupId);
       const participantes = metadata?.participants || [];
       
-      // Criar mapa: numero (sem @) -> pushName
-      const mapaParticipantes = {};
+      // Criar mapa: número (apenas dígitos) -> pushName
+      const mapaPorNumero = {};
+      
+      console.log('[top10] === DEBUG PARTICIPANTES ===');
       for (const p of participantes) {
-        const numero = p.id.split('@')[0].split(':')[0];
-        mapaParticipantes[numero] = p.pushName || p.name || numero;
+        // Extrair apenas números do ID
+        const numero = p.id.split('@')[0].split(':')[0].replace(/\D/g, '');
+        const nome = p.pushName || p.name || numero;
+        mapaPorNumero[numero] = nome;
+        console.log(`[top10] Meta: ${p.id} -> Numero: ${numero} -> Nome: ${nome}`);
+      }
+      
+      console.log('[top10] === DEBUG BANCO ===');
+      for (const { id } of top10) {
+        const idNumeros = String(id).split('@')[0].split(':')[0].replace(/\D/g, '');
+        console.log(`[top10] Banco: ${id} -> Numeros: ${idNumeros}`);
       }
 
       let texto = '';
@@ -50,26 +61,30 @@ module.exports = {
       for (let i = 0; i < top10.length; i++) {
         const { id, nivel, mensagens } = top10[i];
         
-        // Extrair número do ID do banco
-        const idNumeros = String(id).split('@')[0].split(':')[0];
+        // Extrair apenas números do ID do banco
+        const idNumeros = String(id).split('@')[0].split(':')[0].replace(/\D/g, '');
         
         // Buscar nome
-        let nome = mapaParticipantes[idNumeros];
+        let nome = mapaPorNumero[idNumeros];
         
+        // Se não encontrou, tentar partial match
         if (!nome) {
-          // Tentar buscar qualquer participante que comece com esse número
-          const encontrado = Object.entries(mapaParticipantes).find(([num, _]) => 
+          const encontrado = Object.entries(mapaPorNumero).find(([num, _]) => 
             num.startsWith(idNumeros) || idNumeros.startsWith(num)
           );
-          nome = encontrado ? encontrado[1] : null;
+          if (encontrado) {
+            nome = encontrado[1];
+          }
         }
         
+        // Fallback
         if (!nome) {
-          // Último recurso: mostrar "Usuário"
           nome = 'Usuário';
         }
         
-        mencoes.push(`${idNumeros}@s.whatsapp.net`);
+        const mentionId = `${idNumeros}@s.whatsapp.net`;
+        mencoes.push(mentionId);
+        
         texto += `${i + 1}. ${nome} - ${getPatente(nivel)} (Nv ${nivel}, ${mensagens} msgs)\n`;
       }
 
