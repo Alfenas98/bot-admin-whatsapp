@@ -1,5 +1,6 @@
 const { db } = require('../lib/database');
 const { getPatente } = require('../lib/xp');
+const { formatarMencao } = require('../lib/userUtils');
 
 module.exports = {
   name: 'top10',
@@ -35,14 +36,10 @@ module.exports = {
       for (let i = 0; i < lista.length; i++) {
         const { id, nivel, mensagens, nome } = lista[i];
         
-        // Formatar ID: extrair número antes de @lid
-        const idNumeros = String(id).split('@')[0].split(':')[0];
+        const displayNome = nome || id.split('@')[0];
+        const mencao = formatarMencao(id);
         
-        // Usar nome se disponível, senão mostrar número
-        const displayNome = nome || idNumeros;
-        
-        // Mencionar pelo número
-        mencoes.push(`${idNumeros}@s.whatsapp.net`);
+        mencoes.push(mencao);
         texto += `${i + 1}. ${displayNome} - ${getPatente(nivel)} (Nv ${nivel}, ${mensagens} msgs)\n`;
       }
 

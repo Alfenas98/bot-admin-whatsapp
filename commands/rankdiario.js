@@ -1,5 +1,6 @@
 const { db } = require('../lib/database');
 const { getPatente } = require('../lib/xp');
+const { formatarMencao } = require('../lib/userUtils');
 
 module.exports = {
   name: 'rankdiario',
@@ -28,10 +29,10 @@ module.exports = {
     const linhas = [];
     
     for (const { id, nivel, mensagens, nome } of lista) {
-      const idNumeros = String(id).split('@')[0].split(':')[0];
-      const displayNome = nome || idNumeros;
+      const displayNome = nome || id.split('@')[0];
+      const mencao = formatarMencao(id);
       
-      mencoes.push(`${idNumeros}@s.whatsapp.net`);
+      mencoes.push(mencao);
       linhas.push(`${linhas.length + 1}. ${displayNome} — ${getPatente(nivel)} (${mensagens} msgs)`);
     }
     
