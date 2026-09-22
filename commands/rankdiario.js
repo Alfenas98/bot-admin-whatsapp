@@ -1,6 +1,6 @@
 const { db } = require('../lib/database');
 const { getPatente } = require('../lib/xp');
-const { formatarMencao } = require('../lib/userUtils');
+const { buscarIdReal } = require('../lib/userUtils');
 
 module.exports = {
   name: 'rankdiario',
@@ -30,9 +30,11 @@ module.exports = {
     
     for (const { id, nivel, mensagens, nome } of lista) {
       const displayNome = nome || id.split('@')[0];
-      const mencao = formatarMencao(id);
       
-      mencoes.push(mencao);
+      // Buscar ID real e mencionar
+      const idReal = await buscarIdReal(sock, groupId, id);
+      mencoes.push(idReal);
+      
       linhas.push(`${linhas.length + 1}. ${displayNome} — ${getPatente(nivel)} (${mensagens} msgs)`);
     }
     
