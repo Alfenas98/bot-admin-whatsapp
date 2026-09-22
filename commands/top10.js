@@ -8,46 +8,21 @@ module.exports = {
 
   async execute({ sock, groupId, reply }) {
     try {
-      // Acessar todos os usuários
-      const todosUsuarios = db.get('users').value();
+      const grupo = db.get(['users', groupId]).value();
       
-      if (!todosUsuarios || typeof todosUsuarios !== 'object') {
-        return reply('📊 Nenhum dado de ranking encontrado.');
-      }
-
-      // Acessar usuários do grupo específico
-      const grupo = todosUsuarios[groupId];
-      
-      if (!grupo) {
+      if (!grupo || typeof grupo !== 'object') {
         return reply('📊 Nenhum dado de ranking encontrado para este grupo.');
       }
 
-      // Converter para array de [id, dados]
-      let entradas;
-      if (Array.isArray(grupo)) {
-        // Se for array, assumir que cada item tem { id, ... }
-        entradas = grupo.filter(item => item && item.id).map(item => [item.id, item]);
-      } else if (typeof grupo === 'object') {
-        entradas = Object.entries(grupo);
-      } else {
-        return reply('📊 Formato de dados inválido.');
-      }
+      const entradas = Object.entries(grupo);
 
       const lista = [];
-      
-      for (const item of entradas) {
-        if (!Array.isArray(item) || item.length !== 2) continue;
-        
-        const [id, dados] = item;
-        
+      for (const [id, dados] of entradas) {
         if (!dados) continue;
-        
         const mensagens = dados.mensagens || 0;
         if (mensagens <= 0) continue;
-        
         const nivel = dados.nivel || 1;
         const xp = dados.xp || 0;
-        
         lista.push({ id, nivel, xp, mensagens, pontuacao: nivel * 10000 + xp });
       }
 
@@ -58,7 +33,7 @@ module.exports = {
       lista.sort((a, b) => b.pontuacao - a.pontuacao);
       const top10 = lista.slice(0, 10);
 
-      // Buscar nomes
+      // Buscar nomes dos participantes
       const nomes = {};
       try {
         const metadata = await sock.groupMetadata(groupId);
@@ -76,12 +51,20 @@ module.exports = {
       
       for (let i = 0; i < top10.length; i++) {
         const { id, nivel, mensagens } = top10[i];
-        const nome = nomes[id] || id.split('@')[0];
-        const patente = getPatente(nivel);
-        const jid = id.includes('@') ? id : `${id}@s.whatsapp.net`;
-        mencoes.push(jid);
         
-        texto += `${i + 1}. @${id.split('@')[0]} - ${patente} (Nv ${nivel}, ${mensagens} msgs)\n`;
+        // Buscar nome do usuário
+        let nome = nomes[id];
+        if (!nome) {
+          // Tentar buscar pelo número base
+          const numeroBase = String(id).split('@')[0].split(':')[0];
+          const encontrado = Object.entries(nomes).find(([jid, _]) => 
+            jid.startsWith(numeroBase) || numeroBase.startsWith(jid.split('@')[0].split(':')[0])
+          );
+          nome = encontrado ? encontrado[1] : formatarTelefone(numeroBase);
+        }
+        
+        mencoes.push(id);
+        texto += `${i + 1}. ${nome} - ${getPatente(nivel)} (Nv ${nivel}, ${mensagens} msgs)\n`;
       }
 
       return await sock.sendMessage(groupId, {
@@ -94,3 +77,16 @@ module.exports = {
     }
   }
 };
+
+function formatarTelefone(numero) {
+  if (!numero) return 'Desconhecido';
+  const limpo = String(numero).replace(/\D/g, '');
+  if (limpo.length > 15 || !/^\d+$/.test(limpo)) return 'Usuário';
+  if (limpo.length === 13 && limpo.startsWith('55')) {
+    const ddd = limpo.substring(2, 4);
+    const num = limpo.substring(4);
+    return `(${ddd}) *****-${num.substring(num.length - 4)}`;
+  }
+  if (limpo.length > 4) return `****${limpo.substring(limpo.length - 4)}`;
+  return limpo;
+}
