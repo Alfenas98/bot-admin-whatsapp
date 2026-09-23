@@ -21,34 +21,81 @@ function normalizar(str) {
   return str.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9\s-]/g, '').trim();
 }
 
-// ===================== YOUTUBE DOWNLOAD =====================
-async function baixarYouTube(query) {
+// ===================== YOUTUBE STREAMING =====================
+async function baixarYouTubeStream(videoId) {
   try {
-    const ytdlp = require('yt-dlp-wrap').default;
-    const downloader = new ytdlp();
-    
-    console.log('[musica] Tentando yt-dlp...');
+    console.log('[musica] Tentando streaming do YouTube...');
     
     const nomeArquivo = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
     const destino = path.join(DOWNLOAD_DIR, `${nomeArquivo}.mp3`);
     
-    // Executar yt-dlp
-    const output = await downloader.execPromise([
-      '--extract-audio',
-      '--audio-format', 'mp3',
-      '--audio-quality', '3',
-      '--max-filesize', '15M',
-      '--no-playlist',
-      '--output', destino,
-      `ytsearch1:${query}`
-    ]);
+    // Usar Invidious API para pegar stream de áudio
+    const instancias = [
+      'https://invidious.nerdvpn.de',
+      'https://invidious.jing.rocks',
+      'https://yewtu.be',
+      'https://invidious.fdn.fr'
+    ];
     
-    if (fs.existsSync(destino) && fs.statSync(destino).size > 10000) {
-      console.log('[musica] yt-dlp OK!');
-      return { arquivo: destino, nome: query, fonte: 'YouTube' };
+    for (const base of instancias) {
+      try {
+        // Pegar informações do vídeo
+        const infoRes = await axios.get(`${base}/api/v1/videos/${videoId}`, { timeout: 10000 });
+        const info = infoRes.data;
+        
+        // Pegar formato de áudio
+        const audioFormats = info.adaptiveFormats?.filter(f => f.type?.includes('audio')) || [];
+        
+        if (audioFormats.length > 0) {
+          // Pegar o melhor áudio
+          const bestAudio = audioFormats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0))[0];
+          
+          if (bestAudio?.url) {
+            const audioResponse = await axios.get(bestAudio.url, {
+              responseType: 'stream',
+              timeout: 120000
+            });
+            
+            const writer = fs.createWriteStream(destino);
+            audioResponse.data.pipe(writer);
+            
+            await new Promise((resolve, reject) => {
+              writer.on('finish', resolve);
+              writer.on('error', reject);
+            });
+            
+            // Converter para mp3 usando ffmpeg
+            if (fs.existsSync(destino) && fs.statSync(destino).size > 10000) {
+              const mp3Destino = destino.replace(/\.[^.]+$/, '.mp3');
+              
+              await new Promise((resolve) => {
+                const { exec } = require('child_process');
+                exec(`ffmpeg -i "${destino}" -codec:a libmp3lame -qscale:a 3 "${mp3Destino}" -y`, (error) => {
+                  if (!error && fs.existsSync(mp3Destino)) {
+                    fs.unlinkSync(destino);
+                    resolve();
+                  } else {
+                    // Manter arquivo original se conversão falhar
+                    mp3Destino !== destino && fs.existsSync(mp3Destino) && fs.unlinkSync(mp3Destino);
+                    resolve();
+                  }
+                });
+              });
+              
+              const finalFile = fs.existsSync(mp3Destino) ? mp3Destino : destino;
+              if (fs.existsSync(finalFile) && fs.statSync(finalFile).size > 10000) {
+                console.log('[musica] Streaming OK!');
+                return { arquivo: finalFile, titulo: info.title };
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.log(`[musica] Instância ${base} falhou:`, e.message);
+      }
     }
   } catch (e) {
-    console.log('[musica] yt-dlp falhou:', e.message);
+    console.log('[musica] Streaming falhou:', e.message);
   }
   return null;
 }
@@ -89,8 +136,8 @@ async function baixarDeezer(url, destino) {
   });
 }
 
-// ===================== YOUTUBE URL =====================
-async function buscarYouTubeUrl(query) {
+// ===================== BUSCAR VIDEO ID =====================
+async function buscarVideoId(query) {
   const termos = [query, normalizar(query)];
   
   for (const termo of termos) {
@@ -103,7 +150,7 @@ async function buscarYouTubeUrl(query) {
       
       const match = res.data.match(/\"videoId\":\"([a-zA-Z0-9_-]{11})\"/);
       if (match) {
-        return `https://youtube.com/watch?v=${match[1]}`;
+        return match.group(1);
       }
     } catch (e) {}
   }
@@ -124,20 +171,24 @@ module.exports = {
     try {
       await reply('🔍 Buscando música...');
       
-      let resultado = null;
       let arquivoFinal = null;
       let nomeMusica = query;
       let fonte = '';
       
-      // 1. Tentar yt-dlp (YouTube completo)
-      resultado = await baixarYouTube(query);
-      if (resultado) {
-        arquivoFinal = resultado.arquivo;
-        nomeMusica = resultado.nome;
-        fonte = resultado.fonte;
+      // 1. Buscar videoId
+      const videoId = await buscarVideoId(query);
+      
+      if (videoId) {
+        // 2. Tentar streaming do YouTube
+        const resultado = await baixarYouTubeStream(videoId);
+        if (resultado) {
+          arquivoFinal = resultado.arquivo;
+          nomeMusica = resultado.titulo || query;
+          fonte = 'YouTube';
+        }
       }
       
-      // 2. Fallback: Deezer (preview 30s)
+      // 3. Fallback: Deezer (preview 30s)
       if (!arquivoFinal) {
         const deezer = await buscarDeezer(query);
         if (deezer?.preview) {
@@ -156,19 +207,8 @@ module.exports = {
         }
       }
 
-      // 3. Fallback: link do YouTube
       if (!arquivoFinal) {
-        const youtubeUrl = await buscarYouTubeUrl(query);
-        if (youtubeUrl) {
-          return reply(`🎵 ${query}\n\n🔗 ${youtubeUrl}\n\n⚠️ Download indisponível no momento. Clique no link para ouvir!`);
-        }
         return reply('⚠️ Música não encontrada. Tente outro termo.');
-      }
-
-      const stats = fs.statSync(arquivoFinal);
-      if (stats.size > 16 * 1024 * 1024) {
-        fs.unlinkSync(arquivoFinal);
-        return reply('⚠️ Áudio muito grande!');
       }
 
       await reply(`🎵 ${nomeMusica}\n📡 ${fonte}`);
