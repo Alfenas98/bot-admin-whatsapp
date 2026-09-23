@@ -1,3 +1,13 @@
+/**
+ * Sistema de Música - Download e envio
+ * 
+ * Estratégia:
+ * 1. Cobalt API (YouTube download)
+ * 2. YouTube via yt-dlp (se disponível)
+ * 3. Deezer (preview 30s)
+ * 4. Link do YouTube (fallback)
+ */
+
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
@@ -17,35 +27,82 @@ function limparAntigos() {
   } catch (e) {}
 }
 
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
 function normalizar(str) {
   return str.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9\s-]/g, '').trim();
 }
 
-// Buscar vídeo no YouTube via Invidious API
-async function buscarInvidious(query) {
-  const instancias = [
-    'https://invidious.nerdvpn.de',
-    'https://invidious.jing.rocks',
-    'https://yewtu.be',
-    'https://invidious.nerdvpn.de'
-  ];
-  
-  for (const base of instancias) {
-    try {
-      const url = `${base}/api/v1/search?q=${encodeURIComponent(query)}&type=video`;
-      const res = await axios.get(url, { timeout: 10000 });
+// ===================== COBALT API (YouTube Download) =====================
+async function baixarCobalt(query) {
+  try {
+    // Primeiro buscar o videoId
+    const youtubeUrl = await buscarYouTubeUrl(query);
+    if (!youtubeUrl) return null;
+    
+    const response = await axios.post('https://api.cobalt.tools/', {
+      url: youtubeUrl,
+      audioFormat: 'mp3',
+      isAudioOnly: true,
+      filenameStyle: 'pretty'
+    }, {
+      timeout: 120000,
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+    
+    if (response.data?.url) {
+      const nomeArquivo = `${Date.now()}_${Math.random().toString(36).substring(7)}.mp3`;
+      const destino = path.join(DOWNLOAD_DIR, nomeArquivo);
       
-      if (res.data && res.data.length > 0) {
-        const video = res.data[0];
-        return {
-          videoId: video.videoId,
-          titulo: video.title,
-          duracao: video.lengthSeconds
-        };
+      const audioResponse = await axios.get(response.data.url, {
+        responseType: 'stream',
+        timeout: 120000,
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+      
+      const writer = fs.createWriteStream(destino);
+      audioResponse.data.pipe(writer);
+      
+      await new Promise((resolve, reject) => {
+        writer.on('finish', resolve);
+        writer.on('error', reject);
+      });
+      
+      if (fs.existsSync(destino) && fs.statSync(destino).size > 10000) {
+        return destino;
+      }
+    }
+  } catch (e) {
+    console.log('[musica] Cobalt falhou:', e.message);
+  }
+  return null;
+}
+
+// Buscar URL do YouTube
+async function buscarYouTubeUrl(query) {
+  const termos = [query, normalizar(query), query.split('-')[0]?.trim()].filter((v, i, a) => v && a.indexOf(v) === i);
+  
+  for (const termo of termos) {
+    if (!termo || termo.length < 3) continue;
+    
+    try {
+      const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(termo)}`;
+      const res = await axios.get(url, {
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+      
+      const matches = res.data.match(/\"videoId\":\"([a-zA-Z0-9_-]{11})\"/g);
+      
+      if (matches && matches.length > 0) {
+        const videoId = matches[0].match(/\"videoId\":\"([a-zA-Z0-9_-]{11})\"/)?.[1];
+        if (videoId) {
+          return `https://youtube.com/watch?v=${videoId}`;
+        }
       }
     } catch (e) {
       continue;
@@ -54,14 +111,13 @@ async function buscarInvidious(query) {
   return null;
 }
 
-// Download via yt-dlp
+// ===================== YT-DLP =====================
 async function baixarYTDL(query) {
   const nomeArquivo = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
   const destino = path.join(DOWNLOAD_DIR, nomeArquivo);
   
   const comandos = [
     `yt-dlp --extract-audio --audio-format mp3 --audio-quality 3 --max-filesize 15M --no-playlist --no-warnings --output "${destino}.mp3" "ytsearch1:${query}"`,
-    `python3 -m yt-dlp --extract-audio --audio-format mp3 --audio-quality 3 --max-filesize 15M --no-playlist --no-warnings --output "${destino}.mp3" "ytsearch1:${query}"`,
   ];
   
   for (const cmd of comandos) {
@@ -96,8 +152,7 @@ async function buscarDeezer(query) {
           return {
             titulo: track.title,
             artista: track.artist.name,
-            preview: track.preview,
-            link: track.link
+            preview: track.preview
           };
         }
       }
@@ -140,22 +195,21 @@ module.exports = {
       let nomeMusica = query;
       let fonte = '';
       
-      // 1. Tentar YouTube (música completa)
-      try {
+      // 1. Tentar Cobalt API (YouTube)
+      arquivoFinal = await baixarCobalt(query);
+      if (arquivoFinal) {
+        fonte = 'YouTube (completo)';
+      }
+      
+      // 2. Fallback: yt-dlp
+      if (!arquivoFinal) {
         arquivoFinal = await baixarYTDL(query);
         if (arquivoFinal) {
           fonte = 'YouTube (completo)';
-          const stats = fs.statSync(arquivoFinal);
-          if (stats.size > 16 * 1024 * 1024) {
-            fs.unlinkSync(arquivoFinal);
-            arquivoFinal = null;
-          }
         }
-      } catch (e) {
-        console.log('[musica] YouTube falhou:', e.message);
       }
       
-      // 2. Fallback: Deezer (preview 30s)
+      // 3. Fallback: Deezer (preview 30s)
       if (!arquivoFinal) {
         const deezer = await buscarDeezer(query);
         if (deezer?.preview) {
@@ -174,13 +228,13 @@ module.exports = {
         }
       }
 
-      // 3. Se não conseguiu nada, enviar link do YouTube
+      // 4. Fallback: link do YouTube
       if (!arquivoFinal) {
-        const video = await buscarInvidious(query);
-        if (video) {
-          return reply(`🎵 ${video.titulo}\n\n🔗 https://youtube.com/watch?v=${video.videoId}\n\n⚠️ Download indisponível no momento. Clique no link para ouvir!`);
+        const youtubeUrl = await buscarYouTubeUrl(query);
+        if (youtubeUrl) {
+          return reply(`🎵 ${query}\n\n🔗 ${youtubeUrl}\n\n⚠️ Download indisponível. Clique no link para ouvir!`);
         }
-        return reply('⚠️ Não foi possível encontrar a música. Tente outro termo.');
+        return reply('⚠️ Não foi possível encontrar a música.');
       }
 
       const stats = fs.statSync(arquivoFinal);
