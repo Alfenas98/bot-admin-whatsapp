@@ -1,10 +1,8 @@
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const { execFile } = require('child_process');
 
 const DOWNLOAD_DIR = path.join(__dirname, '..', 'temp', 'music');
-const YT_DLP = '/tmp/yt-dlp';
 
 if (!fs.existsSync(DOWNLOAD_DIR)) fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
 
@@ -23,46 +21,31 @@ function normalizar(str) {
   return str.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9\s-]/g, '').trim();
 }
 
-// ===================== YT-DLP =====================
-async function baixarYTDLP(query) {
+// ===================== YOUTUBE DOWNLOAD =====================
+async function baixarYouTube(query) {
   try {
-    // Verificar se yt-dlp existe em /tmp
-    if (!fs.existsSync(YT_DLP)) {
-      console.log('[musica] Baixando yt-dlp...');
-      const response = await axios.get('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp', {
-        responseType: 'arraybuffer',
-        timeout: 60000
-      });
-      fs.writeFileSync(YT_DLP, Buffer.from(response.data));
-      fs.chmodSync(YT_DLP, 0o755);
-    }
+    const ytdlp = require('yt-dlp-wrap').default;
+    const downloader = new ytdlp();
     
     console.log('[musica] Tentando yt-dlp...');
     
     const nomeArquivo = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
     const destino = path.join(DOWNLOAD_DIR, `${nomeArquivo}.mp3`);
     
-    const args = [
+    // Executar yt-dlp
+    const output = await downloader.execPromise([
       '--extract-audio',
       '--audio-format', 'mp3',
       '--audio-quality', '3',
       '--max-filesize', '15M',
       '--no-playlist',
-      '--no-warnings',
-      '--quiet',
-      '-o', destino,
+      '--output', destino,
       `ytsearch1:${query}`
-    ];
+    ]);
     
-    const result = await new Promise((resolve) => {
-      execFile(YT_DLP, args, { timeout: 180000, cwd: DOWNLOAD_DIR }, (error) => {
-        resolve(!error);
-      });
-    });
-    
-    if (result && fs.existsSync(destino) && fs.statSync(destino).size > 10000) {
+    if (fs.existsSync(destino) && fs.statSync(destino).size > 10000) {
       console.log('[musica] yt-dlp OK!');
-      return destino;
+      return { arquivo: destino, nome: query, fonte: 'YouTube' };
     }
   } catch (e) {
     console.log('[musica] yt-dlp falhou:', e.message);
@@ -106,6 +89,27 @@ async function baixarDeezer(url, destino) {
   });
 }
 
+// ===================== YOUTUBE URL =====================
+async function buscarYouTubeUrl(query) {
+  const termos = [query, normalizar(query)];
+  
+  for (const termo of termos) {
+    try {
+      const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(termo)}`;
+      const res = await axios.get(url, {
+        timeout: 10000,
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+      
+      const match = res.data.match(/\"videoId\":\"([a-zA-Z0-9_-]{11})\"/);
+      if (match) {
+        return `https://youtube.com/watch?v=${match[1]}`;
+      }
+    } catch (e) {}
+  }
+  return null;
+}
+
 module.exports = {
   name: 'musica',
   aliases: ['music', 'song', 'tocar'],
@@ -120,17 +124,20 @@ module.exports = {
     try {
       await reply('🔍 Buscando música...');
       
+      let resultado = null;
       let arquivoFinal = null;
       let nomeMusica = query;
       let fonte = '';
       
-      // 1. yt-dlp (YouTube completo)
-      arquivoFinal = await baixarYTDLP(query);
-      if (arquivoFinal) {
-        fonte = 'YouTube';
+      // 1. Tentar yt-dlp (YouTube completo)
+      resultado = await baixarYouTube(query);
+      if (resultado) {
+        arquivoFinal = resultado.arquivo;
+        nomeMusica = resultado.nome;
+        fonte = resultado.fonte;
       }
       
-      // 2. Deezer (preview 30s)
+      // 2. Fallback: Deezer (preview 30s)
       if (!arquivoFinal) {
         const deezer = await buscarDeezer(query);
         if (deezer?.preview) {
@@ -149,8 +156,12 @@ module.exports = {
         }
       }
 
-      // 3. Falha
+      // 3. Fallback: link do YouTube
       if (!arquivoFinal) {
+        const youtubeUrl = await buscarYouTubeUrl(query);
+        if (youtubeUrl) {
+          return reply(`🎵 ${query}\n\n🔗 ${youtubeUrl}\n\n⚠️ Download indisponível no momento. Clique no link para ouvir!`);
+        }
         return reply('⚠️ Música não encontrada. Tente outro termo.');
       }
 
