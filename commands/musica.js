@@ -1,55 +1,12 @@
-/**
- * Sistema de Música - Download e envio
- */
-
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 
 const DOWNLOAD_DIR = path.join(__dirname, '..', 'temp', 'music');
-const YT_DLP_DIR = path.join(__dirname, '..', 'bin');
-const YT_DLP = path.join(YT_DLP_DIR, 'yt-dlp');
+const YT_DLP = '/tmp/yt-dlp';
 
 if (!fs.existsSync(DOWNLOAD_DIR)) fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
-if (!fs.existsSync(YT_DLP_DIR)) fs.mkdirSync(YT_DLP_DIR, { recursive: true });
-
-// ===================== INSTALAR YT-DLP =====================
-async function instalarYTDLP() {
-  if (fs.existsSync(YT_DLP)) {
-    console.log('[musica] yt-dlp já instalado em', YT_DLP);
-    return true;
-  }
-  
-  console.log('[musica] Instalando yt-dlp...');
-  
-  try {
-    // Baixar yt-dlp
-    const response = await axios.get('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp', {
-      responseType: 'arraybuffer',
-      timeout: 60000
-    });
-    
-    fs.writeFileSync(YT_DLP, Buffer.from(response.data));
-    fs.chmodSync(YT_DLP, 0o755);
-    
-    console.log('[musica] yt-dlp instalado com sucesso em', YT_DLP);
-    return true;
-  } catch (e) {
-    console.log('[musica] Erro ao instalar yt-dlp:', e.message);
-    
-    // Tentar usar /tmp como fallback
-    if (fs.existsSync('/tmp/yt-dlp')) {
-      try {
-        fs.copyFileSync('/tmp/yt-dlp', YT_DLP);
-        fs.chmodSync(YT_DLP, 0o755);
-        return true;
-      } catch (e2) {}
-    }
-    
-    return false;
-  }
-}
 
 function limparAntigos() {
   try {
@@ -69,9 +26,15 @@ function normalizar(str) {
 // ===================== YT-DLP =====================
 async function baixarYTDLP(query) {
   try {
+    // Verificar se yt-dlp existe em /tmp
     if (!fs.existsSync(YT_DLP)) {
-      const instalado = await instalarYTDLP();
-      if (!instalado) return null;
+      console.log('[musica] Baixando yt-dlp...');
+      const response = await axios.get('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp', {
+        responseType: 'arraybuffer',
+        timeout: 60000
+      });
+      fs.writeFileSync(YT_DLP, Buffer.from(response.data));
+      fs.chmodSync(YT_DLP, 0o755);
     }
     
     console.log('[musica] Tentando yt-dlp...');
@@ -92,7 +55,7 @@ async function baixarYTDLP(query) {
     ];
     
     const result = await new Promise((resolve) => {
-      execFile(YT_DLP, args, { timeout: 120000, cwd: DOWNLOAD_DIR }, (error) => {
+      execFile(YT_DLP, args, { timeout: 180000, cwd: DOWNLOAD_DIR }, (error) => {
         resolve(!error);
       });
     });
@@ -143,27 +106,6 @@ async function baixarDeezer(url, destino) {
   });
 }
 
-// ===================== YOUTUBE URL =====================
-async function buscarYouTubeUrl(query) {
-  const termos = [query, normalizar(query)];
-  
-  for (const termo of termos) {
-    try {
-      const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(termo)}`;
-      const res = await axios.get(url, {
-        timeout: 10000,
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-      });
-      
-      const match = res.data.match(/\"videoId\":\"([a-zA-Z0-9_-]{11})\"/);
-      if (match) {
-        return `https://youtube.com/watch?v=${match[1]}`;
-      }
-    } catch (e) {}
-  }
-  return null;
-}
-
 module.exports = {
   name: 'musica',
   aliases: ['music', 'song', 'tocar'],
@@ -207,13 +149,9 @@ module.exports = {
         }
       }
 
-      // 3. Link do YouTube
+      // 3. Falha
       if (!arquivoFinal) {
-        const youtubeUrl = await buscarYouTubeUrl(query);
-        if (youtubeUrl) {
-          return reply(`🎵 ${query}\n\n🔗 ${youtubeUrl}\n\n⚠️ Download indisponível. Clique para ouvir!`);
-        }
-        return reply('⚠️ Música não encontrada.');
+        return reply('⚠️ Música não encontrada. Tente outro termo.');
       }
 
       const stats = fs.statSync(arquivoFinal);
