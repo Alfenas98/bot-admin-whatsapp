@@ -1,6 +1,7 @@
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const { exec } = require('child_process');
 
 const DOWNLOAD_DIR = path.join(__dirname, '..', 'temp', 'music');
 if (!fs.existsSync(DOWNLOAD_DIR)) fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
@@ -24,30 +25,27 @@ function normalizar(str) {
   return str.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9\s-]/g, '').trim();
 }
 
-// Buscar vídeo no YouTube (scrape)
-async function buscarYouTube(query) {
-  const termos = [query, normalizar(query), query.split('-')[0]?.trim()].filter((v, i, a) => v && a.indexOf(v) === i);
+// Buscar vídeo no YouTube via Invidious API
+async function buscarInvidious(query) {
+  const instancias = [
+    'https://invidious.nerdvpn.de',
+    'https://invidious.jing.rocks',
+    'https://yewtu.be',
+    'https://invidious.nerdvpn.de'
+  ];
   
-  for (const termo of termos) {
-    if (!termo || termo.length < 3) continue;
-    
+  for (const base of instancias) {
     try {
-      const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(termo)}`;
-      const res = await axios.get(url, {
-        timeout: 10000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
+      const url = `${base}/api/v1/search?q=${encodeURIComponent(query)}&type=video`;
+      const res = await axios.get(url, { timeout: 10000 });
       
-      const matches = res.data.match(/"videoId":"([a-zA-Z0-9_-]{11})"/g);
-      const titulos = res.data.match(/"title":{"runs":\[{"text":"([^"]+)"/g);
-      
-      if (matches && matches.length > 0) {
-        const videoId = matches[0].match(/"videoId":"([a-zA-Z0-9_-]{11})"/)?.[1];
-        const titulo = titulos?.[0]?.match(/"title":{"runs":\[{"text":"([^"]+)"/)?.[1] || termo;
-        
-        if (videoId) return { videoId, titulo };
+      if (res.data && res.data.length > 0) {
+        const video = res.data[0];
+        return {
+          videoId: video.videoId,
+          titulo: video.title,
+          duracao: video.lengthSeconds
+        };
       }
     } catch (e) {
       continue;
@@ -62,8 +60,8 @@ async function baixarYTDL(query) {
   const destino = path.join(DOWNLOAD_DIR, nomeArquivo);
   
   const comandos = [
-    `python3 -m ytdlp --extract-audio --audio-format mp3 --audio-quality 3 --max-filesize 15M --no-playlist --no-warnings --output "${destino}.mp3" "ytsearch1:${query}"`,
     `yt-dlp --extract-audio --audio-format mp3 --audio-quality 3 --max-filesize 15M --no-playlist --no-warnings --output "${destino}.mp3" "ytsearch1:${query}"`,
+    `python3 -m yt-dlp --extract-audio --audio-format mp3 --audio-quality 3 --max-filesize 15M --no-playlist --no-warnings --output "${destino}.mp3" "ytsearch1:${query}"`,
   ];
   
   for (const cmd of comandos) {
@@ -137,7 +135,7 @@ module.exports = {
 
     try {
       await reply('🔍 Buscando música...');
-
+      
       let arquivoFinal = null;
       let nomeMusica = query;
       let fonte = '';
@@ -162,7 +160,7 @@ module.exports = {
         const deezer = await buscarDeezer(query);
         if (deezer?.preview) {
           fonte = 'Deezer (preview 30s)';
-          nomeMusica = deezer.titulo;
+          nomeMusica = `${deezer.titulo} - ${deezer.artista}`;
           
           const nomeArquivo = `${Date.now()}_${Math.random().toString(36).substring(7)}.mp3`;
           const caminho = path.join(DOWNLOAD_DIR, nomeArquivo);
@@ -175,9 +173,14 @@ module.exports = {
           } catch (e) {}
         }
       }
-      
+
+      // 3. Se não conseguiu nada, enviar link do YouTube
       if (!arquivoFinal) {
-        return reply('⚠️ Não foi possível baixar. Tente outro termo.');
+        const video = await buscarInvidious(query);
+        if (video) {
+          return reply(`🎵 ${video.titulo}\n\n🔗 https://youtube.com/watch?v=${video.videoId}\n\n⚠️ Download indisponível no momento. Clique no link para ouvir!`);
+        }
+        return reply('⚠️ Não foi possível encontrar a música. Tente outro termo.');
       }
 
       const stats = fs.statSync(arquivoFinal);
@@ -196,7 +199,7 @@ module.exports = {
       }, { quoted: msg });
 
       try { fs.unlinkSync(arquivoFinal); } catch (e) {}
-
+      
     } catch (err) {
       console.error('[musica] Erro:', err.message);
       return reply('⚠️ Erro ao baixar música.');
