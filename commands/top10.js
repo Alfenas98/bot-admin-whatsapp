@@ -1,6 +1,5 @@
 const { db } = require('../lib/database');
 const { getPatente } = require('../lib/xp');
-const { buscarIdReal } = require('../lib/userUtils');
 
 module.exports = {
   name: 'top10',
@@ -30,19 +29,31 @@ module.exports = {
         return reply('📊 Nenhum membro com mensagens encontrado.');
       }
 
+      // Buscar metadata para obter JIDs corretos
+      const metadata = await sock.groupMetadata(groupId);
+      const participantes = metadata?.participants || [];
+      
+      // Criar mapa: número base -> JID completo da metadata
+      const mapaJids = {};
+      for (const p of participantes) {
+        const numeroBase = p.id.split('@')[0].split(':')[0];
+        mapaJids[numeroBase] = p.id; // JID completo: 123@lid
+      }
+
       let texto = '';
       const mencoes = [];
       
       for (let i = 0; i < lista.length; i++) {
         const { id, nivel, mensagens, nome } = lista[i];
+        const idNumeros = String(id).split('@')[0].split(':')[0];
         
-        const displayNome = nome || id.split('@')[0];
+        // Buscar JID correto na metadata
+        const jidCorreto = mapaJids[idNumeros] || id;
         
-        // Buscar ID real e mencionar
-        const idReal = await buscarIdReal(sock, groupId, id);
-        mencoes.push(idReal);
+        const displayNome = nome || idNumeros;
         
-        texto += `${i + 1}. @${displayNome} - ${getPatente(nivel)} (Nv ${nivel}, ${mensagens} msgs)\n`;
+        mencoes.push(jidCorreto);
+        texto += `${i + 1}. ${displayNome} - ${getPatente(nivel)} (Nv ${nivel}, ${mensagens} msgs)\n`;
       }
 
       return await sock.sendMessage(groupId, {

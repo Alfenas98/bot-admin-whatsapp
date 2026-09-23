@@ -1,20 +1,55 @@
 /**
  * Sistema de Música - Download e envio
- * 
- * Estratégia:
- * 1. Cobalt API (YouTube download)
- * 2. YouTube via yt-dlp (se disponível)
- * 3. Deezer (preview 30s)
- * 4. Link do YouTube (fallback)
  */
 
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 
 const DOWNLOAD_DIR = path.join(__dirname, '..', 'temp', 'music');
+const YT_DLP_DIR = path.join(__dirname, '..', 'bin');
+const YT_DLP = path.join(YT_DLP_DIR, 'yt-dlp');
+
 if (!fs.existsSync(DOWNLOAD_DIR)) fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
+if (!fs.existsSync(YT_DLP_DIR)) fs.mkdirSync(YT_DLP_DIR, { recursive: true });
+
+// ===================== INSTALAR YT-DLP =====================
+async function instalarYTDLP() {
+  if (fs.existsSync(YT_DLP)) {
+    console.log('[musica] yt-dlp já instalado em', YT_DLP);
+    return true;
+  }
+  
+  console.log('[musica] Instalando yt-dlp...');
+  
+  try {
+    // Baixar yt-dlp
+    const response = await axios.get('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp', {
+      responseType: 'arraybuffer',
+      timeout: 60000
+    });
+    
+    fs.writeFileSync(YT_DLP, Buffer.from(response.data));
+    fs.chmodSync(YT_DLP, 0o755);
+    
+    console.log('[musica] yt-dlp instalado com sucesso em', YT_DLP);
+    return true;
+  } catch (e) {
+    console.log('[musica] Erro ao instalar yt-dlp:', e.message);
+    
+    // Tentar usar /tmp como fallback
+    if (fs.existsSync('/tmp/yt-dlp')) {
+      try {
+        fs.copyFileSync('/tmp/yt-dlp', YT_DLP);
+        fs.chmodSync(YT_DLP, 0o755);
+        return true;
+      } catch (e2) {}
+    }
+    
+    return false;
+  }
+}
 
 function limparAntigos() {
   try {
@@ -31,111 +66,43 @@ function normalizar(str) {
   return str.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-zA-Z0-9\s-]/g, '').trim();
 }
 
-// ===================== COBALT API (YouTube Download) =====================
-async function baixarCobalt(query) {
+// ===================== YT-DLP =====================
+async function baixarYTDLP(query) {
   try {
-    // Primeiro buscar o videoId
-    const youtubeUrl = await buscarYouTubeUrl(query);
-    if (!youtubeUrl) return null;
+    if (!fs.existsSync(YT_DLP)) {
+      const instalado = await instalarYTDLP();
+      if (!instalado) return null;
+    }
     
-    const response = await axios.post('https://api.cobalt.tools/', {
-      url: youtubeUrl,
-      audioFormat: 'mp3',
-      isAudioOnly: true,
-      filenameStyle: 'pretty'
-    }, {
-      timeout: 120000,
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      }
+    console.log('[musica] Tentando yt-dlp...');
+    
+    const nomeArquivo = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const destino = path.join(DOWNLOAD_DIR, `${nomeArquivo}.mp3`);
+    
+    const args = [
+      '--extract-audio',
+      '--audio-format', 'mp3',
+      '--audio-quality', '3',
+      '--max-filesize', '15M',
+      '--no-playlist',
+      '--no-warnings',
+      '--quiet',
+      '-o', destino,
+      `ytsearch1:${query}`
+    ];
+    
+    const result = await new Promise((resolve) => {
+      execFile(YT_DLP, args, { timeout: 120000, cwd: DOWNLOAD_DIR }, (error) => {
+        resolve(!error);
+      });
     });
     
-    if (response.data?.url) {
-      const nomeArquivo = `${Date.now()}_${Math.random().toString(36).substring(7)}.mp3`;
-      const destino = path.join(DOWNLOAD_DIR, nomeArquivo);
-      
-      const audioResponse = await axios.get(response.data.url, {
-        responseType: 'stream',
-        timeout: 120000,
-        headers: { 'User-Agent': 'Mozilla/5.0' }
-      });
-      
-      const writer = fs.createWriteStream(destino);
-      audioResponse.data.pipe(writer);
-      
-      await new Promise((resolve, reject) => {
-        writer.on('finish', resolve);
-        writer.on('error', reject);
-      });
-      
-      if (fs.existsSync(destino) && fs.statSync(destino).size > 10000) {
-        return destino;
-      }
+    if (result && fs.existsSync(destino) && fs.statSync(destino).size > 10000) {
+      console.log('[musica] yt-dlp OK!');
+      return destino;
     }
   } catch (e) {
-    console.log('[musica] Cobalt falhou:', e.message);
-  }
-  return null;
-}
-
-// Buscar URL do YouTube
-async function buscarYouTubeUrl(query) {
-  const termos = [query, normalizar(query), query.split('-')[0]?.trim()].filter((v, i, a) => v && a.indexOf(v) === i);
-  
-  for (const termo of termos) {
-    if (!termo || termo.length < 3) continue;
-    
-    try {
-      const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(termo)}`;
-      const res = await axios.get(url, {
-        timeout: 10000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
-      
-      const matches = res.data.match(/\"videoId\":\"([a-zA-Z0-9_-]{11})\"/g);
-      
-      if (matches && matches.length > 0) {
-        const videoId = matches[0].match(/\"videoId\":\"([a-zA-Z0-9_-]{11})\"/)?.[1];
-        if (videoId) {
-          return `https://youtube.com/watch?v=${videoId}`;
-        }
-      }
-    } catch (e) {
-      continue;
-    }
-  }
-  return null;
-}
-
-// ===================== YT-DLP =====================
-async function baixarYTDL(query) {
-  const nomeArquivo = `${Date.now()}_${Math.random().toString(36).substring(7)}`;
-  const destino = path.join(DOWNLOAD_DIR, nomeArquivo);
-  
-  const comandos = [
-    `yt-dlp --extract-audio --audio-format mp3 --audio-quality 3 --max-filesize 15M --no-playlist --no-warnings --output "${destino}.mp3" "ytsearch1:${query}"`,
-  ];
-  
-  for (const cmd of comandos) {
-    try {
-      await new Promise((resolve, reject) => {
-        exec(cmd, { timeout: 120000, cwd: DOWNLOAD_DIR }, (error) => {
-          if (error) reject(error);
-          else resolve();
-        });
-      });
-      
-      const arquivo = `${destino}.mp3`;
-      if (fs.existsSync(arquivo) && fs.statSync(arquivo).size > 10000) {
-        return arquivo;
-      }
-    } catch (e) {
-      continue;
-    }
+    console.log('[musica] yt-dlp falhou:', e.message);
   }
   return null;
 }
@@ -164,8 +131,7 @@ async function buscarDeezer(query) {
 async function baixarDeezer(url, destino) {
   const response = await axios.get(url, {
     responseType: 'stream',
-    timeout: 60000,
-    headers: { 'User-Agent': 'Mozilla/5.0' }
+    timeout: 60000
   });
   
   const writer = fs.createWriteStream(destino);
@@ -175,6 +141,27 @@ async function baixarDeezer(url, destino) {
     writer.on('finish', resolve);
     writer.on('error', reject);
   });
+}
+
+// ===================== YOUTUBE URL =====================
+async function buscarYouTubeUrl(query) {
+  const termos = [query, normalizar(query)];
+  
+  for (const termo of termos) {
+    try {
+      const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(termo)}`;
+      const res = await axios.get(url, {
+        timeout: 10000,
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+      
+      const match = res.data.match(/\"videoId\":\"([a-zA-Z0-9_-]{11})\"/);
+      if (match) {
+        return `https://youtube.com/watch?v=${match[1]}`;
+      }
+    } catch (e) {}
+  }
+  return null;
 }
 
 module.exports = {
@@ -195,28 +182,20 @@ module.exports = {
       let nomeMusica = query;
       let fonte = '';
       
-      // 1. Tentar Cobalt API (YouTube)
-      arquivoFinal = await baixarCobalt(query);
+      // 1. yt-dlp (YouTube completo)
+      arquivoFinal = await baixarYTDLP(query);
       if (arquivoFinal) {
-        fonte = 'YouTube (completo)';
+        fonte = 'YouTube';
       }
       
-      // 2. Fallback: yt-dlp
-      if (!arquivoFinal) {
-        arquivoFinal = await baixarYTDL(query);
-        if (arquivoFinal) {
-          fonte = 'YouTube (completo)';
-        }
-      }
-      
-      // 3. Fallback: Deezer (preview 30s)
+      // 2. Deezer (preview 30s)
       if (!arquivoFinal) {
         const deezer = await buscarDeezer(query);
         if (deezer?.preview) {
-          fonte = 'Deezer (preview 30s)';
+          fonte = 'Deezer (30s)';
           nomeMusica = `${deezer.titulo} - ${deezer.artista}`;
           
-          const nomeArquivo = `${Date.now()}_${Math.random().toString(36).substring(7)}.mp3`;
+          const nomeArquivo = `${Date.now()}_deezer.mp3`;
           const caminho = path.join(DOWNLOAD_DIR, nomeArquivo);
           
           try {
@@ -228,13 +207,13 @@ module.exports = {
         }
       }
 
-      // 4. Fallback: link do YouTube
+      // 3. Link do YouTube
       if (!arquivoFinal) {
         const youtubeUrl = await buscarYouTubeUrl(query);
         if (youtubeUrl) {
-          return reply(`🎵 ${query}\n\n🔗 ${youtubeUrl}\n\n⚠️ Download indisponível. Clique no link para ouvir!`);
+          return reply(`🎵 ${query}\n\n🔗 ${youtubeUrl}\n\n⚠️ Download indisponível. Clique para ouvir!`);
         }
-        return reply('⚠️ Não foi possível encontrar a música.');
+        return reply('⚠️ Música não encontrada.');
       }
 
       const stats = fs.statSync(arquivoFinal);
