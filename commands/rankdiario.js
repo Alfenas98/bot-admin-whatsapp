@@ -31,11 +31,10 @@ module.exports = {
     for (const { id, nivel, mensagens, nome } of lista) {
       const displayNome = nome || id.split('@')[0];
       
-      // Buscar ID real e mencionar
       const idReal = await buscarIdReal(sock, groupId, id);
       mencoes.push(idReal);
       
-      linhas.push(`${linhas.length + 1}. ${displayNome} — ${getPatente(nivel)} (${mensagens} msgs)`);
+      linhas.push(`${linhas.length + 1}. @${displayNome} — ${getPatente(nivel)} (${mensagens} msgs)`);
     }
     
     return await sock.sendMessage(groupId, {

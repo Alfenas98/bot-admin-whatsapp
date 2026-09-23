@@ -42,7 +42,7 @@ module.exports = {
         const idReal = await buscarIdReal(sock, groupId, id);
         mencoes.push(idReal);
         
-        texto += `${i + 1}. ${displayNome} - ${getPatente(nivel)} (Nv ${nivel}, ${mensagens} msgs)\n`;
+        texto += `${i + 1}. @${displayNome} - ${getPatente(nivel)} (Nv ${nivel}, ${mensagens} msgs)\n`;
       }
 
       return await sock.sendMessage(groupId, {
